@@ -42,16 +42,7 @@ export const createEvent = async (req, res) => {
 
     const { type, payload, idempotencyKey } = value;
 
-    // Step 2: check duplicate
-    const existingEvent = await Event.findOne({ idempotencyKey });
-
-    if (existingEvent) {
-      return res.status(409).json({
-        message: "Duplicate event ignored"
-      });
-    }
-
-    // Step 3: save event
+    // Step 2: directly save (NO duplicate check)
     const event = new Event({
       type,
       payload,
@@ -63,6 +54,14 @@ export const createEvent = async (req, res) => {
     return res.status(201).json(savedEvent);
 
   } catch (err) {
+
+    // IMPORTANT: DB handles idempotency now
+    if (err.code === 11000) {
+      return res.status(409).json({
+        message: "Duplicate event (idempotent request)"
+      });
+    }
+
     return res.status(500).json({
       message: "Internal server error"
     });
