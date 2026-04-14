@@ -5,6 +5,10 @@ import {
   getEventsService,
   getEventByIdService
 } from "../services/event.service.js";
+import eventQueue from "../queue/queue.js";
+
+// ✅ ADD THIS
+import { logAllJobs } from "../debug/queueDebug.js";
 
 export const getEvents = async (req, res) => {
   try {
@@ -30,7 +34,6 @@ export const getEvents = async (req, res) => {
 
 export const createEvent = async (req, res) => {
   try {
-    // Step 1: validate request
     const { error, value } = eventSchema.validate(req.body);
 
     if (error) {
@@ -42,7 +45,6 @@ export const createEvent = async (req, res) => {
 
     const { type, payload, idempotencyKey } = value;
 
-    // Step 2: directly save (NO duplicate check)
     const event = new Event({
       type,
       payload,
@@ -51,11 +53,21 @@ export const createEvent = async (req, res) => {
 
     const savedEvent = await event.save();
 
+    // 🔥 Add job to queue
+    await eventQueue.add("process-event", {
+      eventId: savedEvent._id.toString(),
+      type: savedEvent.type,
+      payload: savedEvent.payload
+    });
+
+    // 🔥 DEBUG: See jobs in terminal
+    // await logAllJobs(eventQueue);
+
     return res.status(201).json(savedEvent);
 
   } catch (err) {
+    console.error("CREATE EVENT ERROR:", err);
 
-    // IMPORTANT: DB handles idempotency now
     if (err.code === 11000) {
       return res.status(409).json({
         message: "Duplicate event (idempotent request)"
@@ -63,7 +75,7 @@ export const createEvent = async (req, res) => {
     }
 
     return res.status(500).json({
-      message: "Internal server error"
+      message: err.message
     });
   }
 };
