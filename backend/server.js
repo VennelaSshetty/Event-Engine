@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 import connectDB from "./config/db.js";
 import eventRoutes from "./routes/eventRoutes.js";
 
+import correlationMiddleware from "./middlewares/correlationMiddleware.js";
+
 dotenv.config();
 
 connectDB();
@@ -12,6 +14,8 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+app.use(correlationMiddleware);
 
 app.use("/api/events", eventRoutes);
 

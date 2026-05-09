@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
+import { getEvents } from "../services/api";
 
 export default function EventTimeline({ newEvent }) {
   const [events, setEvents] = useState([]);
 
-  useEffect(() => {
-    fetch("http://localhost:5000/api/events")
-      .then((res) => res.json())
-      .then((data) => setEvents(data));
-  }, []);
+ useEffect(() => {
+  const loadEvents = async () => {
+    const res = await getEvents();
+    setEvents(res.data);
+  };
+
+  loadEvents();
+}, []);
 
   useEffect(() => {
     if (newEvent) {

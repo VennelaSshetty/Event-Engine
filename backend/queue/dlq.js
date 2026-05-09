@@ -1,8 +1,8 @@
 import { Queue } from "bullmq";
 import connection from "../config/redis.js";
 
-const eventQueue = new Queue("event-queue", {
+const dlq = new Queue("dead-letter-queue", {
   connection
 });
 
-export default eventQueue;
+export default dlq;

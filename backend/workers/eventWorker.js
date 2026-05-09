@@ -2,25 +2,27 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { Worker } from "bullmq";
-import IORedis from "ioredis";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import { EVENT_STATUS } from "../config/eventStatus.js";
+import connection from "../config/redis.js";
+import dlq from "../queue/dlq.js";
 
-// --------------------
-// Redis connection
-// --------------------
-const connection = new IORedis({
-  host: "127.0.0.1",
-  port: 6379,
-  maxRetriesPerRequest: null
-});
+import signupHandler from "../handlers/signupHandler.js";
+import orderHandler from "../handlers/orderHandler.js";
+import paymentHandler from "../handlers/paymentHandler.js";
+
+import logger from "../utils/logger.js";
 
 // --------------------
 // MongoDB connection
 // --------------------
 await mongoose.connect(process.env.MONGO_URI);
-console.log("Worker connected to MongoDB");
+
+logger.info({
+  service: "worker",
+  message: "Worker connected to MongoDB"
+});
 
 // --------------------
 // Worker
@@ -28,20 +30,33 @@ console.log("Worker connected to MongoDB");
 const worker = new Worker(
   "event-queue",
   async (job) => {
-    console.log("\n==============================");
-    console.log("Processing job:", job.id);
-    console.log("Type:", job.data.type);
+    const { type, payload, eventId, correlationId } = job.data;
 
-    const { type, payload, eventId } = job.data;
+    //  HARD CHECK (IMPORTANT)
+    if (!correlationId) {
+      throw new Error("Missing correlationId in job data");
+    }
+
+    logger.info({
+      correlationId,
+      jobId: job.id,
+      eventId,
+      eventType: type,
+      retryCount: job.attemptsMade,
+      status: "PROCESSING",
+      message: "Job processing started"
+    });
 
     try {
-      // --------------------
-      // STEP 1: mark PROCESSING
-      // FIXED (no mongoose warning)
-      // --------------------
+      const startedAt = new Date();
+
       const processingEvent = await Event.findByIdAndUpdate(
         eventId,
-        { status: EVENT_STATUS.PROCESSING },
+        {
+          status: EVENT_STATUS.PROCESSING,
+          startedAt,
+          retryCount: job.attemptsMade
+        },
         { returnDocument: "after" }
       );
 
@@ -49,26 +64,29 @@ const worker = new Worker(
         throw new Error("Event not found in DB");
       }
 
-      console.log(`Event ${eventId} → PROCESSING`);
+      logger.info({
+        correlationId,
+        jobId: job.id,
+        eventId,
+        eventType: type,
+        status: EVENT_STATUS.PROCESSING,
+        message: "Event marked as processing"
+      });
 
       // --------------------
-      // STEP 2: business logic
+      // BUSINESS LOGIC
       // --------------------
-      if (!type) {
-        throw new Error("Event type missing");
-      }
-
       switch (type) {
         case "ORDER_CREATED":
-          console.log("Order Created:", payload);
+          await orderHandler(payload, { correlationId, eventType: type, eventId });
           break;
 
         case "PAYMENT_SUCCESS":
-          console.log("Payment Success:", payload);
+          await paymentHandler(payload, { correlationId, eventType: type, eventId });
           break;
 
         case "USER_SIGNUP":
-          console.log("User Signup:", payload);
+          await signupHandler(payload, { correlationId, eventType: type, eventId });
           break;
 
         default:
@@ -76,46 +94,127 @@ const worker = new Worker(
       }
 
       // --------------------
-      // STEP 3: mark COMPLETED
+      // COMPLETED
       // --------------------
-      await Event.findByIdAndUpdate(
-        eventId,
-        { status: EVENT_STATUS.COMPLETED }
-      );
+      const completedAt = new Date();
+      const processingTimeMs = completedAt - startedAt;
 
-      console.log(`Event ${eventId} → COMPLETED`);
-      console.log("Job SUCCESS:", job.id);
-
-    } catch (err) {
-      // --------------------
-      // ERROR HANDLING
-      // --------------------
-      console.error("Worker error:", {
-        jobId: job.id,
-        eventId,
-        message: err.message
+      await Event.findByIdAndUpdate(eventId, {
+        status: EVENT_STATUS.COMPLETED,
+        completedAt,
+        processingTimeMs
       });
 
-      await Event.findByIdAndUpdate(
+      logger.info({
+        correlationId,
+        jobId: job.id,
         eventId,
-        { status: EVENT_STATUS.FAILED }
-      );
+        eventType: type,
+        status: EVENT_STATUS.COMPLETED,
+        processingTimeMs,
+        retryCount: job.attemptsMade,
+        message: "Event processed successfully"
+      });
 
-      console.log(`Event ${eventId} → FAILED`);
+    } catch (err) {
+      logger.error({
+        correlationId,
+        jobId: job.id,
+        eventId,
+        eventType: type,
+        retryCount: job.attemptsMade + 1,
+        status: EVENT_STATUS.FAILED,
+        error: err.message,
+        message: "Worker processing failed"
+      });
+
+      if (job.attemptsMade + 1 === job.opts.attempts) {
+        await Event.findByIdAndUpdate(eventId, {
+          status: EVENT_STATUS.FAILED,
+          failedAt: new Date(),
+          retryCount: job.attemptsMade + 1
+        });
+      }
 
       throw err;
     }
   },
-  { connection }
+   {
+    connection,
+    concurrency: 5   
+  }
 );
 
 // --------------------
-// Worker logs
+// EVENTS
 // --------------------
+
 worker.on("completed", (job) => {
-  console.log(`Job ${job.id} completed`);
+  logger.info({
+    correlationId: job.data.correlationId,
+    jobId: job.id,
+    status: "COMPLETED",
+    message: "BullMQ completed event fired"
+  });
 });
 
-worker.on("failed", (job, err) => {
-  console.log(`Job ${job?.id} failed: ${err.message}`);
+worker.on("failed", async (job, err) => {
+  const correlationId = job.data.correlationId;
+
+  if (!correlationId) {
+    logger.error({
+      jobId: job?.id,
+      error: "Missing correlationId",
+      message: "Critical tracing failure"
+    });
+  }
+
+  logger.error({
+    correlationId,
+    jobId: job?.id,
+    error: err.message,
+    status: "FAILED",
+    message: "BullMQ failed event fired"
+  });
+
+  const eventId = job.data.eventId;
+
+  const isRetryExhausted = job.attemptsMade === job.opts.attempts;
+  const isStalledExceeded = err.message.includes("stalled");
+
+  if (isRetryExhausted || isStalledExceeded) {
+    await Event.findByIdAndUpdate(eventId, {
+      status: EVENT_STATUS.FAILED,
+      failedAt: new Date(),
+      retryCount: job.attemptsMade
+    });
+
+    logger.warn({
+      correlationId,
+      jobId: job.id,
+      eventId,
+      eventType: job.data.type,
+      status: EVENT_STATUS.FAILED,
+      retryCount: job.attemptsMade,
+      message: "Retries exhausted. Moving event to DLQ"
+    });
+
+    await dlq.add("failed-event", {
+      correlationId,
+      originalJobId: job.id,
+      eventId,
+      type: job.data.type,
+      payload: job.data.payload,
+      failedReason: err.message,
+      failedAt: new Date()
+    });
+  }
+});
+
+worker.on("stalled", (jobId) => {
+  logger.warn({
+    jobId,
+    status: "STALLED",
+    message: "Job stalled and will be retried"
+  });
 });

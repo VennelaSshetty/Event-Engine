@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createEvent } from "../services/api";
 
 export default function EventForm({ onEventCreated }) {
   const [type, setType] = useState("");
@@ -90,15 +91,10 @@ export default function EventForm({ onEventCreated }) {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, payload, idempotencyKey })
-      });
+  const res = await createEvent({ type, payload, idempotencyKey });
+const data = res.data;
 
-      const data = await response.json();
-
-      if (response.ok) {
+     if (res) {
         onEventCreated(data);
         setType("");
         setFormData({});
@@ -109,6 +105,25 @@ export default function EventForm({ onEventCreated }) {
     } catch {
       alert("Something went wrong");
     }
+
+// try {
+//   for (let i = 0; i < 120; i++) {
+//     try {
+//       const res = await createEvent({
+//         type,
+//         payload,
+//         idempotencyKey: idempotencyKey + "_" + i
+//       });
+
+//       console.log("Request", i, "SUCCESS", res.data);
+
+//     } catch (err) {
+//       console.log("Request", i, "FAILED", err.response?.data);
+//     }
+//   }
+// } catch {
+//   alert("Something went wrong");
+// }
   };
 
   return (

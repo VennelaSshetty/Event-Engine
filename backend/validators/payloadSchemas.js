@@ -21,36 +21,54 @@ export const payloadSchemas = {
   }),
 
   [EVENT_TYPES.ORDER_CREATED]: Joi.object({
-    orderId: Joi.string()
-      .pattern(/^order_\d+$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Order ID must be like order_101",
-        "string.empty": "Order ID is required"
-      }),
-    amount: Joi.number()
-      .positive()
-      .required()
-      .messages({
-        "number.positive": "Amount must be a positive number",
-        "any.required": "Amount is required"
-      })
-  }),
+  orderId: Joi.string()
+    .pattern(/^order_\d+$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Order ID must be like order_101",
+      "string.empty": "Order ID is required"
+    }),
+
+  amount: Joi.number()
+    .positive()
+    .required()
+    .messages({
+      "number.positive": "Amount must be a positive number",
+      "any.required": "Amount is required"
+    }),
+
+  email: Joi.string()
+    .email()
+    .required()
+    .messages({
+      "string.email": "Email must be valid",
+      "string.empty": "Email is required"
+    })
+}),
 
   [EVENT_TYPES.PAYMENT_SUCCESS]: Joi.object({
-    paymentId: Joi.string()
-      .pattern(/^pay_\d+$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Payment ID must be like pay_456",
-        "string.empty": "Payment ID is required"
-      }),
-    orderId: Joi.string()
-      .pattern(/^order_\d+$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Order ID must be like order_101",
-        "string.empty": "Order ID is required"
-      })
-  })
+  paymentId: Joi.string()
+    .pattern(/^pay_\d+$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Payment ID must be like pay_456",
+      "string.empty": "Payment ID is required"
+    }),
+
+  orderId: Joi.string()
+    .pattern(/^order_\d+$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Order ID must be like order_101",
+      "string.empty": "Order ID is required"
+    }),
+
+  email: Joi.string()
+    .email()
+    .required()
+    .messages({
+      "string.email": "Email must be valid",
+      "string.empty": "Email is required"
+    })
+}),
 };

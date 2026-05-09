@@ -1,14 +1,10 @@
 import Event from "../models/Event.js";
-import { eventSchema, validatePayload } from "../validators/eventValidator.js";
+import { eventSchema } from "../validators/eventValidator.js";
 import {
   createEventService,
   getEventsService,
   getEventByIdService
 } from "../services/event.service.js";
-import eventQueue from "../queue/queue.js";
-
-// ✅ ADD THIS
-import { logAllJobs } from "../debug/queueDebug.js";
 
 export const getEvents = async (req, res) => {
   try {
@@ -26,9 +22,8 @@ export const getEvents = async (req, res) => {
     res.json(events);
 
   } catch (err) {
-    res.status(500).json({
-      error: "Failed to fetch events"
-    });
+    console.error("GET EVENTS ERROR:", err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -45,33 +40,27 @@ export const createEvent = async (req, res) => {
 
     const { type, payload, idempotencyKey } = value;
 
-    const event = new Event({
-      type,
-      payload,
-      idempotencyKey
-    });
+    // Use SERVICE (transaction + outbox)
+  const event = await createEventService({
+  type,
+  payload,
+  idempotencyKey,
+  appName: req.client.appName,
+  correlationId: req.correlationId   // ADD THIS
+});
 
-    const savedEvent = await event.save();
-
-    // 🔥 Add job to queue
-    await eventQueue.add("process-event", {
-      eventId: savedEvent._id.toString(),
-      type: savedEvent.type,
-      payload: savedEvent.payload
-    });
-
-    // 🔥 DEBUG: See jobs in terminal
-    // await logAllJobs(eventQueue);
-
-    return res.status(201).json(savedEvent);
+    return res.status(201).json(event);
 
   } catch (err) {
     console.error("CREATE EVENT ERROR:", err);
 
+    // ✅ Idempotency handling
     if (err.code === 11000) {
-      return res.status(409).json({
-        message: "Duplicate event (idempotent request)"
+      const existingEvent = await Event.findOne({
+        idempotencyKey: req.body.idempotencyKey
       });
+
+      return res.status(200).json(existingEvent);
     }
 
     return res.status(500).json({
