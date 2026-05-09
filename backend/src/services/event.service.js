@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import OutboxEvent from "../models/OutboxEvent.js";
 import logger from "../utils/logger.js";
+import AppError from "../utils/AppError.js";
 
 export const createEventService = async (data) => {
   const session = await mongoose.startSession();
@@ -85,5 +86,12 @@ export const getEventsService = async (filter, page, limit) => {
 };
 
 export const getEventByIdService = async (id) => {
-  return await Event.findById(id);
+
+  const event = await Event.findById(id);
+
+  if (!event) {
+    throw new AppError("Event not found", 404);
+  }
+
+  return event;
 };

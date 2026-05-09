@@ -1,12 +1,12 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import connectDB from "./config/db.js";
-import eventRoutes from "./routes/eventRoutes.js";
+import config from "./src/config/env.js";
+import connectDB from "./src/config/db.js";
+import eventRoutes from "./src/api/routes/eventRoutes.js";
 
-import correlationMiddleware from "./middlewares/correlationMiddleware.js";
+import correlationMiddleware from "./src/middlewares/correlationMiddleware.js";
 
-dotenv.config();
+import errorMiddleware from "./src/middlewares/errorMiddleware.js";
 
 connectDB();
 
@@ -19,7 +19,9 @@ app.use(correlationMiddleware);
 
 app.use("/api/events", eventRoutes);
 
-const PORT = 5000;
+app.use(errorMiddleware);
+
+const PORT = config.port;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

@@ -1,12 +1,10 @@
 import OutboxEvent from "../models/OutboxEvent.js";
-import eventQueue from "../queue/queue.js";
+import eventQueue from "../queues/queue.js";
 import mongoose from "mongoose";
-import dotenv from "dotenv";
 import logger from "../utils/logger.js";
+import config from "../config/env.js";
 
-dotenv.config();
-
-await mongoose.connect(process.env.MONGO_URI);
+await mongoose.connect(config.mongoUri);
 
 logger.info({
   service: "outbox-worker",
@@ -39,14 +37,6 @@ const processOutbox = async () => {
         // 🔥 ALWAYS PRINT CORRELATION FIRST
         console.log("CORRELATION-ID:", correlationId);
 
-        logger.info({
-          service: "outbox-worker",
-          eventId: event.eventId,
-          outboxId: event._id,
-          correlationId,
-          message: "ABOUT TO PUSH TO QUEUE"
-        });
-
         // 🚨 PUSH TO QUEUE (IMPORTANT FIX HERE)
         await eventQueue.add(
           "process-event",
@@ -57,11 +47,12 @@ const processOutbox = async () => {
             correlationId
           },
           {
-            attempts: 5,
-            backoff: {
-              type: "exponential",
-              delay: 5000
-            }
+          attempts: config.retryAttempts,
+
+          backoff: {
+            type: "exponential",
+            delay: config.retryDelay
+           }
           }
         );
 

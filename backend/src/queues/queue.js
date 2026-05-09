@@ -1,7 +1,9 @@
 import { Queue } from "bullmq";
 import connection from "../config/redis.js";
 
-const eventQueue = new Queue("event-queue", {
+import config from "../config/env.js";
+
+const eventQueue = new Queue(config.queueName, {
   connection
 });
 

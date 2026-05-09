@@ -1,23 +1,21 @@
-import dotenv from "dotenv";
-dotenv.config();
-
 import { Worker } from "bullmq";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import { EVENT_STATUS } from "../config/eventStatus.js";
 import connection from "../config/redis.js";
-import dlq from "../queue/dlq.js";
+import dlq from "../queues/dlq.js";
 
 import signupHandler from "../handlers/signupHandler.js";
 import orderHandler from "../handlers/orderHandler.js";
 import paymentHandler from "../handlers/paymentHandler.js";
 
 import logger from "../utils/logger.js";
+import config from "../config/env.js";
 
 // --------------------
 // MongoDB connection
 // --------------------
-await mongoose.connect(process.env.MONGO_URI);
+await mongoose.connect(config.mongoUri);
 
 logger.info({
   service: "worker",
@@ -141,7 +139,7 @@ const worker = new Worker(
   },
    {
     connection,
-    concurrency: 5   
+    concurrency: config.workerConcurrency 
   }
 );
 
