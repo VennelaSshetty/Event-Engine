@@ -8,6 +8,9 @@ import correlationMiddleware from "./src/middlewares/correlationMiddleware.js";
 
 import errorMiddleware from "./src/middlewares/errorMiddleware.js";
 
+import replayRoutes from "./src/api/routes/replayRoutes.js";
+import dlqRoutes from "./src/api/routes/dlqRoutes.js";
+
 connectDB();
 
 const app = express();
@@ -18,6 +21,8 @@ app.use(express.json());
 app.use(correlationMiddleware);
 
 app.use("/api/events", eventRoutes);
+app.use("/api/replay", replayRoutes);
+app.use("/api/dlq", dlqRoutes);
 
 app.use(errorMiddleware);
 

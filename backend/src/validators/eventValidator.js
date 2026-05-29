@@ -2,6 +2,7 @@
 import Joi from "joi";
 import { EVENT_TYPES } from "../config/eventTypes.js";
 import { payloadSchemas } from "./payloadSchemas.js";
+import AppError from "../utils/AppError.js";
 
 export const eventSchema = Joi.object({
   type: Joi.string()
@@ -27,11 +28,23 @@ export const eventSchema = Joi.object({
   })
 });
 
-// Helper function to get clean message
 export function validatePayload(type, payload) {
   const schema = payloadSchemas[type];
-  if (!schema) throw new Error("Invalid event type");
 
-  const { error } = schema.validate(payload, { abortEarly: false, allowUnknown: false });
-  if (error) throw new Error(error.details.map(d => d.message).join(", "));
+  if (!schema) {
+    throw new AppError("Invalid event type", 400, false);
+  }
+
+  const { error } = schema.validate(payload, {
+    abortEarly: false,
+    allowUnknown: false
+  });
+
+  if (error) {
+    throw new AppError(
+      error.details.map(d => d.message).join(", "),
+      400,
+      false // validation errors are NON-RETRYABLE
+    );
+  }
 }

@@ -57,7 +57,24 @@ const eventSchema = new mongoose.Schema({
   correlationId: {
     type: String,
     index: true
+  },
+
+  replayCount: {
+  type: Number,
+  default: 0
+},
+
+lastReplayedAt: {
+  type: Date,
+  default: null
+},
+
+replayHistory: [
+  {
+    replayedAt: Date,
+    reason: String
   }
+]
 
 }, { timestamps: true });
 

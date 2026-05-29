@@ -11,16 +11,52 @@ logger.info({
   message: "Outbox Worker connected to MongoDB"
 });
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 100;
 
 /**
  * Process pending outbox events
  */
 const processOutbox = async () => {
+    let eventIds = [];
   try {
-    const events = await OutboxEvent.find({ status: "PENDING" })
-      .sort({ createdAt: 1 })
-      .limit(BATCH_SIZE);
+// -----------------------------------
+// FETCH PENDING EVENTS
+// -----------------------------------
+
+const pendingEvents = await OutboxEvent.find({
+  status: "PENDING"
+})
+.sort({ createdAt: 1 })
+.limit(BATCH_SIZE);
+
+if (pendingEvents.length === 0) return;
+
+// -----------------------------------
+// MARK AS PROCESSING IMMEDIATELY
+// -----------------------------------
+
+eventIds = pendingEvents.map(event => event._id);
+
+await OutboxEvent.updateMany(
+  {
+    _id: { $in: eventIds },
+    status: "PENDING"
+  },
+  {
+    $set: {
+      status: "PROCESSING"
+    }
+  }
+);
+
+// -----------------------------------
+// FETCH ONLY LOCKED EVENTS
+// -----------------------------------
+
+const events = await OutboxEvent.find({
+  _id: { $in: eventIds },
+  status: "PROCESSING"
+});
 
     if (events.length === 0) return;
 
@@ -30,96 +66,133 @@ const processOutbox = async () => {
       message: "Processing outbox batch"
     });
 
-    for (const event of events) {
-      try {
-        const correlationId = event.correlationId;
+// -----------------------------------
+// PREPARE BATCH EVENTS
+// -----------------------------------
 
-        // 🔥 ALWAYS PRINT CORRELATION FIRST
-        console.log("CORRELATION-ID:", correlationId);
+const batchEvents = events.map(event => {
 
-        // 🚨 PUSH TO QUEUE (IMPORTANT FIX HERE)
-        await eventQueue.add(
-          "process-event",
-          {
-            eventId: event.eventId, // ✅ MUST BE EVENT COLLECTION ID
-            type: event.eventType,
-            payload: event.payload,
-            correlationId
-          },
-          {
-          attempts: config.retryAttempts,
+  logger.info({
+    service: "outbox-worker",
+    correlationId: event.correlationId,
+    eventId: event.eventId,
+    message: "Preparing event for batch queue"
+  });
 
-          backoff: {
-            type: "exponential",
-            delay: config.retryDelay
-           }
-          }
-        );
+  return {
+    eventId: event.eventId.toString(),
+    correlationId: event.correlationId
+  };
+});
 
-        // mark SENT
-        event.status = "SENT";
-        event.processedAt = new Date();
-        await event.save();
+// -----------------------------------
+// PUSH ENTIRE BATCH TO QUEUE
+// -----------------------------------
+if (batchEvents.length > 0) {
 
-        logger.info({
-          service: "outbox-worker",
-          eventId: event.eventId,
-          outboxId: event._id,
-          correlationId,
-          eventType: event.eventType,
-          status: "SENT",
-          message: "Event pushed to queue successfully"
-        });
+  // -----------------------------------
+  // PUSH ENTIRE BATCH TO QUEUE
+  // -----------------------------------
 
-      } catch (err) {
-        logger.error({
-          service: "outbox-worker",
-          eventId: event.eventId,
-          outboxId: event._id,
-          correlationId: event.correlationId,
-          error: err.message,
-          message: "Failed to push event to queue"
-        });
+  try {
 
-        event.retries = (event.retries || 0) + 1;
-        event.lastError = err.message;
+    await eventQueue.add(
+      "process-batch",
+      {
+        events: batchEvents
+      },
+      {
+        attempts: config.retryAttempts,
 
-        if (event.retries >= 5) {
-          event.status = "FAILED";
+        backoff: {
+          type: "exponential",
+          delay: config.retryDelay
+        },
 
-          logger.warn({
-            service: "outbox-worker",
-            eventId: event.eventId,
-            correlationId: event.correlationId,
-            status: "FAILED",
-            message: "Event permanently failed in outbox"
-          });
-        }
-
-        await event.save();
+        removeOnComplete: 100,
+        removeOnFail: 100
       }
-    }
+    );
 
   } catch (err) {
-    logger.error({
-      service: "outbox-worker",
-      error: err.message,
-      message: "Outbox processing failed"
-    });
+
+    // -----------------------------------
+    // RESET TO PENDING ONLY IF
+    // QUEUE PUSH FAILED
+    // -----------------------------------
+
+    await OutboxEvent.updateMany(
+      {
+        _id: { $in: eventIds }
+      },
+      {
+        $set: {
+          status: "PENDING"
+        }
+      }
+    );
+
+    throw err;
   }
+
+  logger.info({
+    service: "outbox-worker",
+    batchSize: batchEvents.length,
+    message: "Batch pushed to queue successfully"
+  });
+
+  // -----------------------------------
+  // MARK EVENTS AS SENT
+  // -----------------------------------
+
+  await OutboxEvent.updateMany(
+    {
+      _id: {
+        $in: events.map(e => e._id)
+      }
+    },
+    {
+      $set: {
+        status: "SENT",
+        processedAt: new Date()
+      }
+    }
+  );
+
+  logger.info({
+    service: "outbox-worker",
+    updatedCount: events.length,
+    message: "Batch events marked as SENT"
+  });
+}
+
+  } catch (err) {
+  logger.error({
+    service: "outbox-worker",
+    error: err.message,
+    message: "Outbox processing failed"
+  });
+}
 };
 
 /**
  * Start worker loop
  */
-const startOutboxWorker = () => {
+const startOutboxWorker = async () => {
   logger.info({
     service: "outbox-worker",
     interval: "5 seconds",
     message: "Outbox Worker started"
   });
 
-  setInterval(processOutbox, 5000);
+  while (true) {
+
+  await processOutbox();
+
+  await new Promise(resolve =>
+    setTimeout(resolve, 5000)
+  );
+}
 };
 
 export default startOutboxWorker;

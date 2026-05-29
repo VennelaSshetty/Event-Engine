@@ -60,19 +60,21 @@ export const createEventService = async (data) => {
 
     return event;
 
-  } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+} catch (error) {
+  await session.abortTransaction();
+  session.endSession();
 
-    logger.error({
-      correlationId: data?.correlationId || "unknown-correlation",
-      service: "event-service",
-      error: error.message,
-      message: "Event creation failed"
-    });
+  logger.error({
+    correlationId: data?.correlationId || "unknown-correlation",
+    service: "event-service",
+    error: error.message,
+    message: "Event creation failed"
+  });
 
-    throw error;
-  }
+  throw error instanceof AppError
+    ? error
+    : new AppError(error.message, 500, true);
+}
 };
 
 // --------------------

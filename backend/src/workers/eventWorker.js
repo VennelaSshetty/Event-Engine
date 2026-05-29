@@ -5,15 +5,17 @@ import { EVENT_STATUS } from "../config/eventStatus.js";
 import connection from "../config/redis.js";
 import dlq from "../queues/dlq.js";
 
-import signupHandler from "../handlers/signupHandler.js";
-import orderHandler from "../handlers/orderHandler.js";
-import paymentHandler from "../handlers/paymentHandler.js";
-
 import logger from "../utils/logger.js";
 import config from "../config/env.js";
 
+import { createPlan } from "../workflow-engine/planner.js";
+import { executeStep } from "../workflow-engine/executor.js";
+import { warmWorkflowCache } from "../services/workflowCache.service.js";
+import WorkflowExecutionService
+from "../services/workflowExecutionService.js";
+
 // --------------------
-// MongoDB connection
+// DB CONNECTION
 // --------------------
 await mongoose.connect(config.mongoUri);
 
@@ -22,189 +24,359 @@ logger.info({
   message: "Worker connected to MongoDB"
 });
 
+await warmWorkflowCache();
+
+logger.info({
+  service: "worker",
+  message: "Workflow cache warmed"
+});
+
 // --------------------
-// Worker
+// WORKER
 // --------------------
 const worker = new Worker(
   "event-queue",
-  async (job) => {
-    const { type, payload, eventId, correlationId } = job.data;
+async (job) => {
 
-    //  HARD CHECK (IMPORTANT)
-    if (!correlationId) {
-      throw new Error("Missing correlationId in job data");
-    }
+  const { events } = job.data;
 
-    logger.info({
-      correlationId,
-      jobId: job.id,
-      eventId,
-      eventType: type,
-      retryCount: job.attemptsMade,
-      status: "PROCESSING",
-      message: "Job processing started"
-    });
+if (!events || !Array.isArray(events)) {
+
+  logger.error({
+    service: "worker",
+    jobId: job.id,
+    rawJobData: job.data,
+    message: "Invalid job payload"
+  });
+
+  throw new Error("Invalid job payload: events array missing");
+}
+
+  logger.info({
+    service: "worker",
+    batchSize: events.length,
+    message: "Batch processing started"
+  });
+
+const results=await Promise.allSettled(
+
+  events.map(async (item) => {
+
+    const { eventId, correlationId } = item;
+
+    const startedAt = new Date();
+
+    let workflowExecution = null;
 
     try {
-      const startedAt = new Date();
 
-      const processingEvent = await Event.findByIdAndUpdate(
-        eventId,
-        {
-          status: EVENT_STATUS.PROCESSING,
-          startedAt,
-          retryCount: job.attemptsMade
-        },
-        { returnDocument: "after" }
-      );
+      const event = await Event.findById(eventId);
 
-      if (!processingEvent) {
-        throw new Error("Event not found in DB");
+      if (!event) {
+
+        logger.error({
+          service: "worker",
+          eventId,
+          correlationId,
+          message: "Event not found"
+        });
+
+        return;
       }
+
+      const { type, payload } = event;
+
+      if (!correlationId) {
+
+        logger.error({
+          service: "worker",
+          eventId,
+          message: "Missing correlationId"
+        });
+
+        return;
+      }
+
+      // --------------------
+      // MARK PROCESSING
+      // --------------------
+      await Event.findByIdAndUpdate(eventId, {
+        status: EVENT_STATUS.PROCESSING,
+        startedAt,
+        retryCount: job.attemptsMade
+      });
 
       logger.info({
         correlationId,
-        jobId: job.id,
         eventId,
         eventType: type,
-        status: EVENT_STATUS.PROCESSING,
-        message: "Event marked as processing"
+        message: "Processing started"
       });
 
       // --------------------
-      // BUSINESS LOGIC
+      // WORKFLOW ENGINE
       // --------------------
-      switch (type) {
-        case "ORDER_CREATED":
-          await orderHandler(payload, { correlationId, eventType: type, eventId });
-          break;
 
-        case "PAYMENT_SUCCESS":
-          await paymentHandler(payload, { correlationId, eventType: type, eventId });
-          break;
+      const plan = await createPlan(type, payload, {
+        correlationId,
+        eventType: type,
+        eventId
+      });
 
-        case "USER_SIGNUP":
-          await signupHandler(payload, { correlationId, eventType: type, eventId });
-          break;
+      workflowExecution =
+  await WorkflowExecutionService.startWorkflow({
+    event,
+    correlationId
+  });
 
-        default:
-          throw new Error(`Unknown event type: ${type}`);
+for (const stage of plan) {
+
+  // PARALLEL
+
+  if (stage.type === "parallel") {
+
+    await Promise.all(
+
+      stage.actions.map(async (action) => {
+
+        const alreadyCompleted =
+          await WorkflowExecutionService
+            .isActionCompleted({
+              workflowExecutionId:
+                workflowExecution._id,
+              actionName: action
+            });
+
+        if (alreadyCompleted) {
+
+          logger.info({
+            correlationId,
+            eventId,
+            action,
+            message:
+              "Skipping already completed action"
+          });
+
+          return;
+        }
+
+        await executeStep({
+          action,
+          payload,
+          context: {
+            correlationId,
+            eventType: type,
+            eventId
+          }
+        });
+
+        await WorkflowExecutionService
+          .markActionCompleted({
+            workflowExecutionId:
+              workflowExecution._id,
+            actionName: action
+          });
+
+        logger.info({
+          correlationId,
+          eventId,
+          action,
+          message:
+            "Action completed successfully"
+        });
+
+      })
+    );
+
+  }
+
+  // SEQUENTIAL
+
+  else {
+
+    for (const action of stage.actions) {
+
+      const alreadyCompleted =
+        await WorkflowExecutionService
+          .isActionCompleted({
+            workflowExecutionId:
+              workflowExecution._id,
+            actionName: action
+          });
+
+      if (alreadyCompleted) {
+
+        logger.info({
+          correlationId,
+          eventId,
+          action,
+          message:
+            "Skipping already completed action"
+        });
+
+        continue;
       }
 
+      await executeStep({
+        action,
+        payload,
+        context: {
+          correlationId,
+          eventType: type,
+          eventId
+        }
+      });
+
+      await WorkflowExecutionService
+        .markActionCompleted({
+          workflowExecutionId:
+            workflowExecution._id,
+          actionName: action
+        });
+
+      logger.info({
+        correlationId,
+        eventId,
+        action,
+        message:
+          "Action completed successfully"
+      });
+
+    }
+  }
+}
+
       // --------------------
-      // COMPLETED
+      // SUCCESS
       // --------------------
-      const completedAt = new Date();
-      const processingTimeMs = completedAt - startedAt;
+      await WorkflowExecutionService
+  .markWorkflowCompleted(
+    workflowExecution._id
+  );
 
       await Event.findByIdAndUpdate(eventId, {
         status: EVENT_STATUS.COMPLETED,
-        completedAt,
-        processingTimeMs
+        completedAt: new Date(),
+        processingTimeMs: Date.now() - startedAt
       });
 
       logger.info({
         correlationId,
-        jobId: job.id,
         eventId,
-        eventType: type,
-        status: EVENT_STATUS.COMPLETED,
-        processingTimeMs,
-        retryCount: job.attemptsMade,
-        message: "Event processed successfully"
+        status: "COMPLETED"
       });
 
     } catch (err) {
+
       logger.error({
         correlationId,
-        jobId: job.id,
         eventId,
-        eventType: type,
-        retryCount: job.attemptsMade + 1,
-        status: EVENT_STATUS.FAILED,
-        error: err.message,
-        message: "Worker processing failed"
+        error: err.message
       });
 
-      if (job.attemptsMade + 1 === job.opts.attempts) {
-        await Event.findByIdAndUpdate(eventId, {
-          status: EVENT_STATUS.FAILED,
-          failedAt: new Date(),
-          retryCount: job.attemptsMade + 1
-        });
-      }
+ if (workflowExecution) {
 
-      throw err;
+  await WorkflowExecutionService
+    .markWorkflowFailed({
+      workflowExecutionId:
+        workflowExecution._id,
+
+      failedAction:
+        err.failedAction || "unknown"
+    });
+
+}
+
+      await Event.findByIdAndUpdate(eventId, {
+        status: EVENT_STATUS.FAILED,
+        failedAt: new Date(),
+        retryCount: job.attemptsMade
+      });
+
+
+
+      // NON-RETRYABLE
+      if (err.isRetryable === false) {
+
+        await dlq.add("failed-event", {
+          eventId,
+          correlationId,
+          error: err.message,
+          errorType: "NON_RETRYABLE",
+          attemptsMade: job.attemptsMade,
+          failedAt: new Date()
+        });
+
+        logger.warn({
+          eventId,
+          message: "Moved to DLQ (non-retryable)"
+        });
+
+        return;
+      }
+       throw err;
     }
+
+  })
+
+);
+const failedEvents = results.filter(
+  (result) => result.status === "rejected"
+);
+
+if (failedEvents.length > 0) {
+
+  logger.error({
+    failedCount: failedEvents.length,
+    total: results.length,
+    message: "Some events failed in batch"
+  });
+
+  throw new Error("BATCH_PARTIAL_FAILURE");
+}
   },
-   {
+  {
     connection,
-    concurrency: config.workerConcurrency 
+    concurrency: config.workerConcurrency
   }
 );
 
 // --------------------
 // EVENTS
 // --------------------
+worker.on("completed", async (job) => {
 
-worker.on("completed", (job) => {
   logger.info({
-    correlationId: job.data.correlationId,
+    service: "worker",
     jobId: job.id,
-    status: "COMPLETED",
-    message: "BullMQ completed event fired"
+    batchSize: job.data.events.length,
+    status: "BATCH_FINISHED"
   });
 });
 
 worker.on("failed", async (job, err) => {
-  const correlationId = job.data.correlationId;
-
-  if (!correlationId) {
-    logger.error({
-      jobId: job?.id,
-      error: "Missing correlationId",
-      message: "Critical tracing failure"
-    });
-  }
 
   logger.error({
-    correlationId,
-    jobId: job?.id,
-    error: err.message,
-    status: "FAILED",
-    message: "BullMQ failed event fired"
+    jobId: job.id,
+    attemptsMade: job.attemptsMade,
+    maxAttempts: job.opts.attempts,
+    error: err.message
   });
 
-  const eventId = job.data.eventId;
+  // Only after ALL retries fail
+  if (job.attemptsMade >= job.opts.attempts) {
 
-  const isRetryExhausted = job.attemptsMade === job.opts.attempts;
-  const isStalledExceeded = err.message.includes("stalled");
-
-  if (isRetryExhausted || isStalledExceeded) {
-    await Event.findByIdAndUpdate(eventId, {
-      status: EVENT_STATUS.FAILED,
-      failedAt: new Date(),
-      retryCount: job.attemptsMade
-    });
+await dlq.add("failed-batch", {
+  events: job.data.events,
+  errorType: "RETRYABLE",
+  dlqRetryCount: job.data.dlqRetryCount || 0,
+  reason: err.message,
+  failedAt: new Date()
+});
 
     logger.warn({
-      correlationId,
       jobId: job.id,
-      eventId,
-      eventType: job.data.type,
-      status: EVENT_STATUS.FAILED,
-      retryCount: job.attemptsMade,
-      message: "Retries exhausted. Moving event to DLQ"
-    });
-
-    await dlq.add("failed-event", {
-      correlationId,
-      originalJobId: job.id,
-      eventId,
-      type: job.data.type,
-      payload: job.data.payload,
-      failedReason: err.message,
-      failedAt: new Date()
+      message: "Moved to DLQ after max retries"
     });
   }
 });
@@ -212,7 +384,7 @@ worker.on("failed", async (job, err) => {
 worker.on("stalled", (jobId) => {
   logger.warn({
     jobId,
-    status: "STALLED",
-    message: "Job stalled and will be retried"
+    message: "Job stalled"
   });
 });
+
