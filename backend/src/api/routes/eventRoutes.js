@@ -11,8 +11,6 @@ const router = express.Router();
 
 router.use(authMiddleware, rateLimitMiddleware);
 
-//router.use(rateLimitMiddleware);
-
 router.get("/", asyncHandler(getEvents));
 
 router.post("/", asyncHandler(createEvent));
