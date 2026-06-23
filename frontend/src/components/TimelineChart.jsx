@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import { API } from "../services/api";
 
 import {
   LineChart,
@@ -19,18 +19,13 @@ function TimelineChart() {
 
     const load = async () => {
 
-      const res = await axios.get(
-        "http://localhost:5000/api/dashboard"
-      );
+    const res = await API.get("/dashboard");
 
       const chartData =
-        res.data.timeline.map(item => ({
-          time: item.time,
-          value:
-            item.status === "completed"
-              ? 1
-              : 0
-        }));
+  (res.data?.timeline || []).map(item => ({
+    time: item.time,
+    value: item.status === "completed" ? 1 : 0
+  }));
 
       setTimeline(chartData);
     };
