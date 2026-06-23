@@ -10,6 +10,8 @@ import errorMiddleware from "./src/middlewares/errorMiddleware.js";
 
 import replayRoutes from "./src/api/routes/replayRoutes.js";
 import dlqRoutes from "./src/api/routes/dlqRoutes.js";
+import dashboardRoutes
+from "./src/api/routes/dashboardRoutes.js";
 
 connectDB();
 
@@ -23,6 +25,7 @@ app.use(correlationMiddleware);
 app.use("/api/events", eventRoutes);
 app.use("/api/replay", replayRoutes);
 app.use("/api/dlq", dlqRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 app.use(errorMiddleware);
 

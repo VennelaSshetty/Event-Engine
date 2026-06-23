@@ -1,13 +1,26 @@
-export default function Navbar() {
-  return (
-    <nav className="bg-gray-900 text-white px-8 py-4 flex justify-between items-center">
-      <h1 className="text-2xl font-bold text-indigo-400">Event Engine</h1>
+import { FiZap } from "react-icons/fi";
 
-      <div className="space-x-6">
-        <button className="hover:text-indigo-400">Home</button>
-        <button className="hover:text-indigo-400">Events</button>
-        <button className="hover:text-indigo-400">Create Event</button>
+function Navbar() {
+  return (
+    <div className="border-b border-slate-700 bg-[#111827]">
+
+      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+
+        <div className="flex items-center gap-3">
+          <FiZap size={24} />
+          <h1 className="text-xl font-bold">
+            Event Engine Dashboard
+          </h1>
+        </div>
+
+        <div className="text-sm text-green-400">
+          System Healthy
+        </div>
+
       </div>
-    </nav>
+
+    </div>
   );
 }
+
+export default Navbar;

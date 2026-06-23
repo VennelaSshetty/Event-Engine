@@ -10,7 +10,7 @@ import {
 import AppError from "../../utils/AppError.js";
 
 // --------------------
-// GET EVENTS
+// GET EVENTS 
 // --------------------
 export const getEvents = async (req, res) => {
 
