@@ -33,7 +33,7 @@ function StatsCards() {
       value: data.processing,
     },
     {
-      title: "Failed / DLQ",
+      title: "Failed ",
       value: data.failed,
     },
     {
