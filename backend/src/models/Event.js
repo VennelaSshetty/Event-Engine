@@ -74,7 +74,22 @@ replayHistory: [
     replayedAt: Date,
     reason: String
   }
-]
+],
+
+isInDLQ: {
+  type: Boolean,
+  default: false
+},
+
+dlqReason: {
+  type: String,
+  default: null
+},
+
+movedToDLQAt: {
+  type: Date,
+  default: null
+}
 
 }, { timestamps: true });
 

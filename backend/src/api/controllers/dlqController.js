@@ -14,9 +14,9 @@ export const getDLQEvents = async (req, res) => {
 
 export const replayEventFromDLQ  = async (req, res) => {
 
-  const { jobId } = req.body;
+  const { eventId } = req.body;
 
-  await replayEvent(jobId);
+await replayEvent(eventId);
 
   res.json({
     success: true,

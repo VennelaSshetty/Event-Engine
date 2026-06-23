@@ -18,24 +18,19 @@ export const getDashboardData = async (req, res) => {
     status: "failed"
   });
 
-  const avgResult = await Event.aggregate([
-    {
-      $match: {
-        processingTimeMs: { $ne: null }
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        avg: { $avg: "$processingTimeMs" }
-      }
-    }
-  ]);
+  const recentEventsForAvg = await Event.find()
+  .sort({ createdAt: -1 })
+  .limit(20);
 
   const avgProcessingTime =
-    avgResult.length > 0
-      ? Math.round(avgResult[0].avg)
-      : 0;
+  recentEventsForAvg.length > 0
+    ? Math.round(
+        recentEventsForAvg.reduce(
+          (sum, e) => sum + (e.processingTimeMs || 0),
+          0
+        ) / recentEventsForAvg.length
+      )
+    : 0;
 
   const eventTypes = await Event.aggregate([
     {

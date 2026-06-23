@@ -1,15 +1,11 @@
-import dlq from "../queues/dlq.js";
+import Event from "../models/Event.js";
 
 export async function getFailedEvents() {
 
-  //const jobs = await dlq.getJobs(["waiting", "failed", "delayed"]);
-
-  const jobs = await dlq.getJobs([
-  "waiting",
-  "failed",
-  "delayed",
-  "completed"
-]);
-
-  return jobs.map(job => job.data);
+  return Event.find({
+    isInDLQ: true
+  })
+  .sort({
+    movedToDLQAt: -1
+  });
 }

@@ -6,14 +6,20 @@ export async function executeStep(step) {
   const action = registry[actionName];
 
   if (!action) {
-    throw new Error(`Action not found: ${actionName}`);
+    const err = new Error(`Action not found: ${actionName}`);
+    err.failedAction = actionName;
+    throw err;
   }
 
-  // ALWAYS PASS CONSISTENT STRUCTURE
-  const context = {
-    ...step.context,
-    payload: step.payload
-  };
+  try {
+    const context = {
+      ...step.context,
+      payload: step.payload
+    };
 
-  return await action(step.payload, context);
+    return await action(step.payload, context);
+  } catch (err) {
+    err.failedAction = actionName;
+    throw err;
+  }
 }

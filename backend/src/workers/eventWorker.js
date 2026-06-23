@@ -254,11 +254,15 @@ for (const stage of plan) {
     workflowExecution._id
   );
 
-      await Event.findByIdAndUpdate(eventId, {
-        status: EVENT_STATUS.COMPLETED,
-        completedAt: new Date(),
-        processingTimeMs: Date.now() - startedAt
-      });
+    await Event.findByIdAndUpdate(eventId, {
+  status: EVENT_STATUS.COMPLETED,
+  completedAt: new Date(),
+  processingTimeMs: Date.now() - startedAt,
+
+  isInDLQ: false,
+  dlqReason: null,
+  movedToDLQAt: null
+});
 
       logger.info({
         correlationId,
@@ -287,11 +291,12 @@ for (const stage of plan) {
 
 }
 
-      await Event.findByIdAndUpdate(eventId, {
-        status: EVENT_STATUS.FAILED,
-        failedAt: new Date(),
-        retryCount: job.attemptsMade
-      });
+   await Event.findByIdAndUpdate(eventId, {
+  status: EVENT_STATUS.FAILED,
+  failedAt: new Date(),
+  retryCount: job.attemptsMade,
+  dlqReason: err.message
+});
 
 
 
@@ -363,22 +368,41 @@ worker.on("failed", async (job, err) => {
     error: err.message
   });
 
-  // Only after ALL retries fail
-  if (job.attemptsMade >= job.opts.attempts) {
+if (job.attemptsMade >= job.opts.attempts) {
 
-await dlq.add("failed-batch", {
-  events: job.data.events,
-  errorType: "RETRYABLE",
-  dlqRetryCount: job.data.dlqRetryCount || 0,
-  reason: err.message,
-  failedAt: new Date()
-});
+  // Mark all failed events as DLQ
+for (const item of job.data.events) {
 
-    logger.warn({
-      jobId: job.id,
-      message: "Moved to DLQ after max retries"
-    });
-  }
+  const event = await Event.findById(item.eventId);
+
+  await Event.findByIdAndUpdate(
+    item.eventId,
+    {
+      isInDLQ: true,
+      movedToDLQAt: new Date(),
+
+      // preserve original failure reason
+      dlqReason: event?.dlqReason || err.message
+    }
+  );
+}
+
+  await dlq.add(
+    "failed-batch",
+    {
+      events: job.data.events,
+      errorType: "RETRYABLE",
+      dlqRetryCount: job.data.dlqRetryCount || 0,
+      reason: err.message,
+      failedAt: new Date()
+    }
+  );
+
+  logger.warn({
+    jobId: job.id,
+    message: "Moved to DLQ after max retries"
+  });
+}
 });
 
 worker.on("stalled", (jobId) => {

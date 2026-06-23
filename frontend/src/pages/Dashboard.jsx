@@ -2,9 +2,10 @@ import Navbar from "../components/Navbar";
 import StatsCards from "../components/StatsCards";
 import RecentEvents from "../components/RecentEvents";
 import EventTypeStats from "../components/EventTypeStats";
-import RecentActivity from "../components/RecentActivity";
 import TimelineChart from "../components/TimelineChart";
 import DLQTable from "../components/DLQTable";
+import WorkflowTracker
+from "../components/WorkflowTracker";
 
 function Dashboard() {
   return (
@@ -19,7 +20,7 @@ function Dashboard() {
 
           <RecentEvents />
 
-          <RecentActivity />
+          <WorkflowTracker />
 
         </div>
 

@@ -38,10 +38,11 @@ export async function replayEvent(eventId, reason = "manual replay") {
   // -------------------------
   // 3. RESET STATE SAFELY
   // -------------------------
-  event.status = EVENT_STATUS.PENDING;
-  event.startedAt = null;
-  event.completedAt = null;
-  event.failedAt = null;
+event.status = EVENT_STATUS.PENDING;
+
+event.startedAt = null;
+event.completedAt = null;
+event.failedAt = null;
 
   // -------------------------
   // 4. UPDATE REPLAY METADATA
