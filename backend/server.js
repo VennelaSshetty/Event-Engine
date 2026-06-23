@@ -15,6 +15,10 @@ from "./src/api/routes/dashboardRoutes.js";
 import workflowRoutes
 from "./src/api/routes/workflowRoutes.js";
 
+import "./src/workers/eventWorker.js";
+import "./src/workers/dlqWorker.js";
+import "./src/workers/outboxWorker.js";
+
 connectDB();
 
 const app = express();
