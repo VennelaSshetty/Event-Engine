@@ -740,15 +740,35 @@ WORKER_CONCURRENCY=5
 ## Start Backend
 
 ```bash
+cd backend
 npm run dev
 ```
 
 ---
 
-## Start Worker
+## Start Worker Services
+
+Event Engine uses three independent worker processes.
+
+### Terminal 1 — Event Worker
 
 ```bash
-npm run worker
+cd backend
+node src/workers/eventWorker.js
+```
+
+### Terminal 2 — DLQ Worker
+
+```bash
+cd backend
+node src/workers/dlqWorker.js
+```
+
+### Terminal 3 — Outbox Worker
+
+```bash
+cd backend
+node src/workers/outboxWorker.js
 ```
 
 ---
@@ -756,10 +776,9 @@ npm run worker
 ## Start Frontend
 
 ```bash
+cd frontend
 npm run dev
 ```
-
----
 
 # 🔮 Future Improvements
 
