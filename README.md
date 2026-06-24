@@ -735,7 +735,6 @@ WORKER_CONCURRENCY=5
 | RETRY_ATTEMPTS | Number of retry attempts before failure |
 | RETRY_DELAY | Delay between retry attempts (ms) |
 | WORKER_CONCURRENCY | Number of jobs processed concurrently |
-```
 
 ## Start Backend
 
