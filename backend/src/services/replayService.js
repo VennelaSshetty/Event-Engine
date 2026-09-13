@@ -44,6 +44,9 @@ event.startedAt = null;
 event.completedAt = null;
 event.failedAt = null;
 
+event.isInDLQ = false;
+event.dlqReason = null;
+event.movedToDLQAt = null;
   // -------------------------
   // 4. UPDATE REPLAY METADATA
   // -------------------------

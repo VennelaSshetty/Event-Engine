@@ -61,9 +61,24 @@ export const createEventService = async (data) => {
     return event;
 
 } catch (error) {
+
   await session.abortTransaction();
   session.endSession();
 
+  // Duplicate request (expected)
+  if (error?.code === 11000) {
+
+    logger.info({
+      correlationId: data?.correlationId || "unknown-correlation",
+      service: "event-service",
+      idempotencyKey: data.idempotencyKey,
+      message: "Duplicate event received, returning existing event"
+    });
+
+    throw error;
+  }
+
+  // Unexpected failure
   logger.error({
     correlationId: data?.correlationId || "unknown-correlation",
     service: "event-service",
@@ -84,12 +99,13 @@ export const getEventsService = async (filter, page, limit) => {
   return await Event.find(filter)
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
-    .limit(limit);
+    .limit(limit)
+    .lean();
 };
 
 export const getEventByIdService = async (id) => {
 
-  const event = await Event.findById(id);
+  const event = await Event.findById(id).lean();
 
   if (!event) {
     throw new AppError("Event not found", 404);

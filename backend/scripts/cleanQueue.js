@@ -1,24 +1,7 @@
-import eventQueue from "../src/queues/queue.js";
+import connection from "../src/config/redis.js";
 
-async function cleanQueue() {
+await connection.flushdb();
 
-  console.log("Cleaning queue...");
+console.log("Redis cleaned");
 
-  // Remove completed jobs
-  await eventQueue.clean(0, 1000, "completed");
-
-  // Remove failed jobs
-  await eventQueue.clean(0, 1000, "failed");
-
-  // Remove waiting jobs
-  await eventQueue.clean(0, 1000, "wait");
-
-  // Remove delayed jobs
-  await eventQueue.clean(0, 1000, "delayed");
-
-  console.log("Queue cleaned");
-
-  process.exit(0);
-}
-
-cleanQueue();
+process.exit();

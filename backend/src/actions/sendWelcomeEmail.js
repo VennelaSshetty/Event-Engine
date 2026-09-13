@@ -2,7 +2,7 @@ import sendEmail from "../services/emailService.js";
 import AppError from "../utils/AppError.js";
 
 export default async function sendWelcomeEmail(payload, ctx) {
-
+  //throw new AppError("Server Down", 400, true);
   if (!payload?.email) {
     throw new AppError("Email missing for welcome email", 400, false);
   }

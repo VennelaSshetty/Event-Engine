@@ -10,9 +10,12 @@ import config from "../config/env.js";
 
 import { createPlan } from "../workflow-engine/planner.js";
 import { executeStep } from "../workflow-engine/executor.js";
-import { warmWorkflowCache } from "../services/workflowCache.service.js";
+
 import WorkflowExecutionService
 from "../services/workflowExecutionService.js";
+
+import validateWorkflows from "../validators/validateWorkflows.js";
+import eventQueue from "../queues/queue.js";
 
 // --------------------
 // DB CONNECTION
@@ -24,12 +27,24 @@ logger.info({
   message: "Worker connected to MongoDB"
 });
 
-await warmWorkflowCache();
+try {
+  validateWorkflows();
 
-logger.info({
-  service: "worker",
-  message: "Workflow cache warmed"
-});
+  logger.info({
+    service: "worker",
+    message: "Workflow configuration validated"
+  });
+
+} catch (err) {
+
+  logger.error({
+    service: "worker",
+    message: err.message
+  });
+
+  process.exit(1);
+}
+
 
 // --------------------
 // WORKER
@@ -68,6 +83,8 @@ const results=await Promise.allSettled(
 
     let workflowExecution = null;
 
+    let retryCount;
+
     try {
 
       const event = await Event.findById(eventId);
@@ -100,11 +117,10 @@ const results=await Promise.allSettled(
       // --------------------
       // MARK PROCESSING
       // --------------------
-      await Event.findByIdAndUpdate(eventId, {
-        status: EVENT_STATUS.PROCESSING,
-        startedAt,
-        retryCount: job.attemptsMade
-      });
+     await Event.findByIdAndUpdate(eventId,{
+    status:EVENT_STATUS.PROCESSING,
+    startedAt
+});
 
       logger.info({
         correlationId,
@@ -117,11 +133,7 @@ const results=await Promise.allSettled(
       // WORKFLOW ENGINE
       // --------------------
 
-      const plan = await createPlan(type, payload, {
-        correlationId,
-        eventType: type,
-        eventId
-      });
+    const plan = await createPlan(type);
 
       workflowExecution =
   await WorkflowExecutionService.startWorkflow({
@@ -133,62 +145,71 @@ for (const stage of plan) {
 
   // PARALLEL
 
-  if (stage.type === "parallel") {
+ if (stage.type === "parallel") {
 
-    await Promise.all(
+  const results = await Promise.allSettled(
 
-      stage.actions.map(async (action) => {
+    stage.actions.map(async (action) => {
 
-        const alreadyCompleted =
-          await WorkflowExecutionService
-            .isActionCompleted({
-              workflowExecutionId:
-                workflowExecution._id,
-              actionName: action
-            });
-
-        if (alreadyCompleted) {
-
-          logger.info({
-            correlationId,
-            eventId,
-            action,
-            message:
-              "Skipping already completed action"
-          });
-
-          return;
-        }
-
-        await executeStep({
-          action,
-          payload,
-          context: {
-            correlationId,
-            eventType: type,
-            eventId
-          }
-        });
-
+      const alreadyCompleted =
         await WorkflowExecutionService
-          .markActionCompleted({
+          .isActionCompleted({
             workflowExecutionId:
               workflowExecution._id,
             actionName: action
           });
+
+      if (alreadyCompleted) {
 
         logger.info({
           correlationId,
           eventId,
           action,
           message:
-            "Action completed successfully"
+            "Skipping already completed action"
         });
 
-      })
-    );
+        return;
+      }
 
+      await executeStep({
+        action,
+        payload,
+        context: {
+          correlationId,
+          eventType: type,
+          eventId
+        }
+      });
+
+      await WorkflowExecutionService
+        .markActionCompleted({
+          workflowExecutionId:
+            workflowExecution._id,
+          actionName: action
+        });
+
+      logger.info({
+        correlationId,
+        eventId,
+        action,
+        message:
+          "Action completed successfully"
+      });
+
+    })
+
+  );
+
+  const failedResult = results.find(
+    (result) => result.status === "rejected"
+  );
+
+  if (failedResult) {
+    throw failedResult.reason;
   }
+
+}
 
   // SEQUENTIAL
 
@@ -253,15 +274,18 @@ for (const stage of plan) {
   .markWorkflowCompleted(
     workflowExecution._id
   );
+const completedAt = new Date();
 
-    await Event.findByIdAndUpdate(eventId, {
+await Event.findByIdAndUpdate(eventId, {
   status: EVENT_STATUS.COMPLETED,
-  completedAt: new Date(),
-  processingTimeMs: Date.now() - startedAt,
-
-  isInDLQ: false,
-  dlqReason: null,
-  movedToDLQAt: null
+  completedAt,
+  processingTimeMs:
+    completedAt.getTime() - startedAt.getTime(),
+  retryCount:0,
+  isInDLQ:false,
+  failedAt:null,
+  dlqReason:null,
+  movedToDLQAt:null
 });
 
       logger.info({
@@ -271,12 +295,12 @@ for (const stage of plan) {
       });
 
     } catch (err) {
-
-      logger.error({
-        correlationId,
-        eventId,
-        error: err.message
-      });
+    logger.error({
+ correlationId,
+ eventId,
+ error: err.message,
+ stack: err.stack
+});
 
  if (workflowExecution) {
 
@@ -291,53 +315,125 @@ for (const stage of plan) {
 
 }
 
-   await Event.findByIdAndUpdate(eventId, {
-  status: EVENT_STATUS.FAILED,
-  failedAt: new Date(),
-  retryCount: job.attemptsMade,
+
+const currentEvent = await Event.findById(eventId).lean();
+
+retryCount = (currentEvent.retryCount || 0) + 1;
+
+
+logger.info({
+  eventId,
+  retryCount,
+  maxRetries: config.retryAttempts
+});
+
+     if (err.isRetryable === false) {
+
+
+
+ await dlq.add("failed-event", {
+    eventId,
+    correlationId,
+    retryCount,
+    error: err.message,
+    errorType: "NON_RETRYABLE",
+    failedAt: new Date()
+});
+
+logger.warn({
+    eventId,
+    message: "Event sent to DLQ (non-retryable)"
+});
+
+return;
+}
+
+const isFinalAttempt =
+  retryCount >= config.retryAttempts;
+
+await Event.findByIdAndUpdate(eventId, {
+  status: isFinalAttempt
+    ? EVENT_STATUS.FAILED
+    : EVENT_STATUS.RETRYING,
+
+  ...(isFinalAttempt && {
+    failedAt: new Date()
+  }),
+
+  $inc: {
+    retryCount: 1
+  },
+
+  processingTimeMs:
+    Date.now() - startedAt,
+
   dlqReason: err.message
 });
 
+if (isFinalAttempt) {
 
 
+await dlq.add("failed-event", {
+    eventId,
+    correlationId,
+    retryCount,
+    error: err.message,
+    failedAt: new Date()
+});
+
+logger.warn({
+    eventId,
+    retryCount,
+    message: "Event sent to DLQ"
+});
+
+return;
+}
       // NON-RETRYABLE
-      if (err.isRetryable === false) {
-
-        await dlq.add("failed-event", {
-          eventId,
-          correlationId,
-          error: err.message,
-          errorType: "NON_RETRYABLE",
-          attemptsMade: job.attemptsMade,
-          failedAt: new Date()
-        });
-
-        logger.warn({
-          eventId,
-          message: "Moved to DLQ (non-retryable)"
-        });
-
-        return;
-      }
-       throw err;
+throw err;
     }
 
   })
 
 );
-const failedEvents = results.filter(
-  (result) => result.status === "rejected"
+const failedEvents = [];
+
+for (let index = 0; index < results.length; index++) {
+
+    if (results[index].status === "rejected") {
+const event = await Event.findById(events[index].eventId);
+
+if(
+  event &&
+  event.retryCount < config.retryAttempts
+){
+    failedEvents.push(events[index]);
+}
+    }
+}
+if(failedEvents.length){
+
+    logger.warn({
+
+        batchSize:events.length,
+
+        failedCount:failedEvents.length,
+
+        message:"Retrying only failed events"
+
+    });
+
+await eventQueue.add(
+ "process-batch",
+ {
+   events: failedEvents
+ },
+ {
+   delay: config.retryDelay,
+   attempts: 1
+ }
 );
 
-if (failedEvents.length > 0) {
-
-  logger.error({
-    failedCount: failedEvents.length,
-    total: results.length,
-    message: "Some events failed in batch"
-  });
-
-  throw new Error("BATCH_PARTIAL_FAILURE");
 }
   },
   {
@@ -357,52 +453,6 @@ worker.on("completed", async (job) => {
     batchSize: job.data.events.length,
     status: "BATCH_FINISHED"
   });
-});
-
-worker.on("failed", async (job, err) => {
-
-  logger.error({
-    jobId: job.id,
-    attemptsMade: job.attemptsMade,
-    maxAttempts: job.opts.attempts,
-    error: err.message
-  });
-
-if (job.attemptsMade >= job.opts.attempts) {
-
-  // Mark all failed events as DLQ
-for (const item of job.data.events) {
-
-  const event = await Event.findById(item.eventId);
-
-  await Event.findByIdAndUpdate(
-    item.eventId,
-    {
-      isInDLQ: true,
-      movedToDLQAt: new Date(),
-
-      // preserve original failure reason
-      dlqReason: event?.dlqReason || err.message
-    }
-  );
-}
-
-  await dlq.add(
-    "failed-batch",
-    {
-      events: job.data.events,
-      errorType: "RETRYABLE",
-      dlqRetryCount: job.data.dlqRetryCount || 0,
-      reason: err.message,
-      failedAt: new Date()
-    }
-  );
-
-  logger.warn({
-    jobId: job.id,
-    message: "Moved to DLQ after max retries"
-  });
-}
 });
 
 worker.on("stalled", (jobId) => {

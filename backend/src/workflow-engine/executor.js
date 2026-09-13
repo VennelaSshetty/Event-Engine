@@ -1,4 +1,5 @@
 import registry from "../utils/handlerRegistry.js";
+import AppError from "../utils/AppError.js";
 
 export async function executeStep(step) {
   const actionName = step.action;
@@ -6,9 +7,15 @@ export async function executeStep(step) {
   const action = registry[actionName];
 
   if (!action) {
-    const err = new Error(`Action not found: ${actionName}`);
-    err.failedAction = actionName;
-    throw err;
+   const err = new AppError(
+  `Action not found: ${actionName}`,
+  500,
+  false
+);
+
+err.failedAction = actionName;
+
+throw err;
   }
 
   try {

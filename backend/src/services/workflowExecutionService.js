@@ -4,37 +4,44 @@ class WorkflowExecutionService {
   /*
    * Create or load workflow execution
    */
-  static async startWorkflow({
-    event,
-    correlationId
-  }) {
-    // Check existing workflow execution
+static async startWorkflow({
+  event,
+  correlationId
+}) {
 
-    let workflowExecution =
-      await WorkflowExecution.findOne({
+  const workflowExecution =
+    await WorkflowExecution.findOneAndUpdate(
+      {
         eventId: event._id
-      });
+      },
+      {
+        $setOnInsert: {
+          eventId: event._id,
+          workflowName: event.type,
+          correlationId,
+          status: "processing",
+          completedActions: []
+        }
+      },
+      {
+        upsert: true,
+        returnDocument: "after",
+        setDefaultsOnInsert: true
+      }
+    );
 
-    // If workflow already exists
-    // return existing one
+  // Existing failed workflow is being replayed
+  if (workflowExecution.status === "failed") {
 
-    if (workflowExecution) {
-      return workflowExecution;
-    }
+    workflowExecution.status = "processing";
+    workflowExecution.failedAction = null;
+    workflowExecution.failedAt = null;
 
-    // Create new workflow execution
-
-    workflowExecution =
-      await WorkflowExecution.create({
-        eventId: event._id,
-        workflowName: event.type,
-        correlationId,
-        status: "processing",
-        completedActions: []
-      });
-
-    return workflowExecution;
+    await workflowExecution.save();
   }
+
+  return workflowExecution;
+}
 
   /*
    * Mark action completed
@@ -51,7 +58,7 @@ class WorkflowExecutionService {
         }
       },
       {
-        new: true
+        returnDocument: "after"
       }
     );
   }
@@ -64,9 +71,9 @@ class WorkflowExecutionService {
     actionName
   }) {
     const workflowExecution =
-      await WorkflowExecution.findById(
-        workflowExecutionId
-      );
+      await WorkflowExecution
+      .findById(workflowExecutionId)
+      .lean();
 
     if (!workflowExecution) {
       throw new Error(
@@ -92,7 +99,7 @@ class WorkflowExecutionService {
         completedAt: new Date()
       },
       {
-        new: true
+       returnDocument: "after"
       }
     );
   }
@@ -112,7 +119,7 @@ class WorkflowExecutionService {
         failedAt: new Date()
       },
       {
-        new: true
+        returnDocument: "after"
       }
     );
   }

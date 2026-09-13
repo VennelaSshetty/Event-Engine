@@ -2,7 +2,7 @@ import logger from "../utils/logger.js";
 import AppError from "../utils/AppError.js";
 
 export default async function sendNotification({ email }, context = {}) {
-  //throw new Error("FORCED_FAILURE_TEST");
+  // throw new AppError("Bad configuration", 400, false);
   // -------------------------
   // VALIDATION LAYER
   // -------------------------

@@ -27,7 +27,8 @@ const pendingEvents = await OutboxEvent.find({
   status: "PENDING"
 })
 .sort({ createdAt: 1 })
-.limit(BATCH_SIZE);
+.limit(BATCH_SIZE)
+.lean();
 
 if (pendingEvents.length === 0) return;
 
@@ -56,7 +57,7 @@ await OutboxEvent.updateMany(
 const events = await OutboxEvent.find({
   _id: { $in: eventIds },
   status: "PROCESSING"
-});
+}).lean();
 
     if (events.length === 0) return;
 
@@ -102,13 +103,6 @@ if (batchEvents.length > 0) {
         events: batchEvents
       },
       {
-        attempts: config.retryAttempts,
-
-        backoff: {
-          type: "exponential",
-          delay: config.retryDelay
-        },
-
         removeOnComplete: 100,
         removeOnFail: 100
       }

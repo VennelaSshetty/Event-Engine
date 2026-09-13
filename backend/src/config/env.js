@@ -15,7 +15,11 @@ const config = {
 
   retryDelay: Number(process.env.RETRY_DELAY) || 5000,
 
-  workerConcurrency: Number(process.env.WORKER_CONCURRENCY) || 5
+  workerConcurrency: Number(process.env.WORKER_CONCURRENCY) || 5,
+
+  benchmarkApiUrl: process.env.BENCHMARK_API_URL,
+
+  benchmarkApiKey: process.env.BENCHMARK_API_KEY
 };
 
 export default config;

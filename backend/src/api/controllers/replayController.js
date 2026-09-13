@@ -4,7 +4,7 @@ export const replayEventController = async (req, res) => {
 
   const { id } = req.params;
 
-  const { reason } = req.body;
+  const { reason } = req.body || {};
 
   const event = await replayEvent(id, reason);
 

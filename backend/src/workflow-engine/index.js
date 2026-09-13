@@ -1,6 +1,5 @@
-import { fetchWorkflow } from "../services/workflowCache.service.js";
+import workflows from "../config/workflows.js";
 
 export async function getWorkflow(eventType) {
-
-  return await fetchWorkflow(eventType);
+  return workflows[eventType] || null;
 }
