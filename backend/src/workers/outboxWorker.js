@@ -97,16 +97,10 @@ if (batchEvents.length > 0) {
 
   try {
 
-    await eventQueue.add(
-      "process-batch",
-      {
-        events: batchEvents
-      },
-      {
-        removeOnComplete: 100,
-        removeOnFail: 100
-      }
-    );
+   await eventQueue.add(
+  "process-batch",
+  { events: batchEvents }
+);
 
   } catch (err) {
 

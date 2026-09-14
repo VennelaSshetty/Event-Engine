@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import mongoose from "mongoose";
-import connection from "../config/redis.js";
+import { workerConnection } from "../config/redis.js";
 import config from "../config/env.js";
 import { processDLQJob } from "../services/dlqService.js";
 import logger from "../utils/logger.js";
@@ -26,10 +26,14 @@ const dlqWorker = new Worker(
     await processDLQJob(job.data);
   },
 
-  {
-    connection,
-    concurrency: 1
+ {
+  connection: workerConnection,
+  concurrency: 1,
+
+   metrics: {
+    maxDataPoints: 20160
   }
+}
 );
 
 dlqWorker.on("completed", (job) => {

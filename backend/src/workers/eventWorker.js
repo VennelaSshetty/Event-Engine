@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import { EVENT_STATUS } from "../config/eventStatus.js";
-import connection from "../config/redis.js";
+import { workerConnection } from "../config/redis.js";
 import dlq from "../queues/dlq.js";
 
 import logger from "../utils/logger.js";
@@ -437,8 +437,12 @@ await eventQueue.add(
 }
   },
   {
-    connection,
-    concurrency: config.workerConcurrency
+    connection: workerConnection,
+    concurrency: config.workerConcurrency,
+
+    metrics: {
+      maxDataPoints: 20160
+    }
   }
 );
 
