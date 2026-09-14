@@ -69,7 +69,7 @@ export const createEvent = async (req, res) => {
 
       const existingEvent = await Event.findOne({
         idempotencyKey: req.body.idempotencyKey
-      });
+      }).lean();
 
       return res.status(200).json({
         success: true,

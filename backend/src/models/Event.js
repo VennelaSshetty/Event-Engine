@@ -93,5 +93,11 @@ movedToDLQAt: {
 
 }, { timestamps: true });
 
+eventSchema.index({ createdAt: -1 });
+
+eventSchema.index({
+  isInDLQ: 1,
+  movedToDLQAt: -1
+});
 
 export default mongoose.model("Event", eventSchema);
