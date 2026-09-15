@@ -1,37 +1,48 @@
 import AppError from "../utils/AppError.js";
 import logger from "../utils/logger.js";
+import Notification from "../models/Notification.js";
 
 const sendNotification = async (message, context = {}) => {
-
-  // 1. Validation
   if (!message || typeof message !== "string") {
     throw new AppError("Invalid notification message", 400, false);
   }
 
+  if (!context.email) {
+    throw new AppError("Email missing for notification", 400, false);
+  }
+
   try {
-    // 2. REAL PLACE: integrate your actual provider here later
-    // Example: await fcm.send(...), twilio.send(...)
+    const notification = await Notification.create({
+      email: context.email,
+      message,
+      correlationId: context.correlationId,
+      status: "SENT"
+    });
 
-    console.log("Sending notification:", message);
+    logger.info({
+      correlationId: context.correlationId,
+      service: "notification-service",
+      notificationId: notification._id,
+      email: context.email,
+      status: "NOTIFICATION_SENT",
+      message: "Notification persisted successfully"
+    });
 
+    return notification;
   } catch (err) {
+    logger.error({
+      correlationId: context.correlationId,
+      service: "notification-service",
+      status: "NOTIFICATION_FAILED",
+      error: err.message
+    });
 
-    // 3. Retryable failure (infra issue)
     throw new AppError(
       "Notification service temporarily unavailable",
       503,
       true
     );
   }
-
-  // 4. Success log
-  logger.info({
-    correlationId: context.correlationId,
-    service: "notification-service",
-    notificationMessage: message,
-    status: "NOTIFICATION_SENT",
-    message: "Notification sent successfully"
-  });
 };
 
 export default sendNotification;

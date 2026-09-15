@@ -1,11 +1,7 @@
-import logger from "../utils/logger.js";
+import sendNotificationService from "../services/notificationService.js";
 import AppError from "../utils/AppError.js";
 
 export default async function sendNotification({ email }, context = {}) {
-  // throw new AppError("Bad configuration", 400, false);
-  // -------------------------
-  // VALIDATION LAYER
-  // -------------------------
   if (!email) {
     throw new AppError(
       "Email is required for notification",
@@ -14,31 +10,11 @@ export default async function sendNotification({ email }, context = {}) {
     );
   }
 
-  try {
-    // -------------------------
-    // REAL NOTIFICATION CALL (placeholder for provider)
-    // -------------------------
-    console.log(`Sending notification to ${email}`);
-
-    // Example in real world:
-    // await notificationProvider.sendEmail(email)
-
-  } catch (err) {
-    throw new AppError(
-      "Notification service failed",
-      503,
-      true
-    );
-  }
-
-  // -------------------------
-  // LOGGING
-  // -------------------------
-  logger.info({
-    correlationId: context.correlationId,
-    service: "notification-service",
-    email,
-    status: "NOTIFICATION_SENT"
-  });
+  await sendNotificationService(
+    `Payment notification for ${email}`,
+    {
+      ...context,
+      email
+    }
+  );
 }
-

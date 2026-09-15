@@ -25,7 +25,8 @@ const config = {
   mailPort: Number(process.env.MAIL_PORT) || 2525,
   mailUser: process.env.MAIL_USER,
   mailPass: process.env.MAIL_PASS,
-  mailFrom: process.env.MAIL_FROM
+  mailFrom: process.env.MAIL_FROM,
+  mailEnabled: process.env.MAIL_ENABLED === "true",
 };
 
 export default config;
