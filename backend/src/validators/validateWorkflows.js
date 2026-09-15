@@ -3,16 +3,20 @@ import registry from "../utils/handlerRegistry.js";
 
 export default function validateWorkflows() {
 
-  for (const [workflowName, workflow] of Object.entries(workflows)) {
+  for (const [workflowName, versions] of Object.entries(workflows)) {
 
-    for (const stage of workflow.sequence) {
+    for (const [version, workflow] of Object.entries(versions)) {
 
-      for (const action of stage) {
+      for (const stage of workflow.sequence) {
 
-        if (!registry[action]) {
-          throw new Error(
-            `Workflow "${workflowName}" contains unknown action "${action}"`
-          );
+        for (const action of stage) {
+
+          if (!registry[action]) {
+            throw new Error(
+              `Workflow "${workflowName}" version "${version}" contains unknown action "${action}"`
+            );
+          }
+
         }
 
       }

@@ -14,6 +14,11 @@ const workflowExecutionSchema = new mongoose.Schema(
       required: true
     },
 
+    workflowVersion: {
+  type: Number,
+  required: true
+},
+
     status: {
       type: String,
       enum: [

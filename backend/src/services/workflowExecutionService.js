@@ -1,4 +1,5 @@
 import WorkflowExecution from "../models/WorkflowExecution.js";
+import { CURRENT_VERSION } from "../config/workflows.js";
 
 class WorkflowExecutionService {
   /*
@@ -6,7 +7,8 @@ class WorkflowExecutionService {
    */
 static async startWorkflow({
   event,
-  correlationId
+  correlationId,
+  currentVersion = CURRENT_VERSION
 }) {
 
   const workflowExecution =
@@ -16,12 +18,13 @@ static async startWorkflow({
       },
       {
         $setOnInsert: {
-          eventId: event._id,
-          workflowName: event.type,
-          correlationId,
-          status: "processing",
-          completedActions: []
-        }
+  eventId: event._id,
+  workflowName: event.type,
+  workflowVersion: currentVersion,
+  correlationId,
+  status: "processing",
+  completedActions: []
+}
       },
       {
         upsert: true,

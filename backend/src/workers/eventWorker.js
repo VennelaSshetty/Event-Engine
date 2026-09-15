@@ -133,13 +133,20 @@ const results=await Promise.allSettled(
       // WORKFLOW ENGINE
       // --------------------
 
-    const plan = await createPlan(type);
+// --------------------
+// WORKFLOW ENGINE
+// --------------------
 
-      workflowExecution =
+workflowExecution =
   await WorkflowExecutionService.startWorkflow({
     event,
     correlationId
   });
+
+const plan = await createPlan(
+  type,
+  workflowExecution.workflowVersion
+);
 
 for (const stage of plan) {
 

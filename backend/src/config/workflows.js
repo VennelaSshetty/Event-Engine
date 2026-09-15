@@ -1,5 +1,7 @@
 const workflows = {
+
   USER_SIGNUP: {
+     1: {
     sequence: [
       ["sendWelcomeEmail"],
       ["sendNotification"],
@@ -7,20 +9,34 @@ const workflows = {
     ]
   },
 
-  ORDER_CREATED: {
+  2: {
     sequence: [
-      ["sendOrderEmail", "sendNotification"],
-      ["trackAnalytics"]
-    ]
-  },
-
-  PAYMENT_SUCCESS: {
-    sequence: [
-      ["updateOrderStatus"],
-      ["sendPaymentEmail", "sendNotification"],
+      ["sendWelcomeEmail"],
       ["trackAnalytics"]
     ]
   }
+  },
+
+  ORDER_CREATED: {
+    1: {
+      sequence: [
+        ["sendOrderEmail", "sendNotification"],
+        ["trackAnalytics"]
+      ]
+    }
+  },
+
+  PAYMENT_SUCCESS: {
+    1: {
+      sequence: [
+        ["updateOrderStatus"],
+        ["sendPaymentEmail", "sendNotification"],
+        ["trackAnalytics"]
+      ]
+    }
+  }
 };
+
+export const CURRENT_VERSION = 1;
 
 export default workflows;

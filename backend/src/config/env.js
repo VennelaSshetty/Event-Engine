@@ -19,7 +19,13 @@ const config = {
 
   benchmarkApiUrl: process.env.BENCHMARK_API_URL,
 
-  benchmarkApiKey: process.env.BENCHMARK_API_KEY
+  benchmarkApiKey: process.env.BENCHMARK_API_KEY,
+
+  mailHost: process.env.MAIL_HOST,
+  mailPort: Number(process.env.MAIL_PORT) || 2525,
+  mailUser: process.env.MAIL_USER,
+  mailPass: process.env.MAIL_PASS,
+  mailFrom: process.env.MAIL_FROM
 };
 
 export default config;

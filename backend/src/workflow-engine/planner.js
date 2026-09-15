@@ -1,11 +1,13 @@
 import { getWorkflow } from "./index.js";
 
-export async function createPlan(eventType) {
+export async function createPlan(eventType, version) {
 
-  const workflow = await getWorkflow(eventType);
+  const workflow = await getWorkflow(eventType, version);
 
   if (!workflow) {
-    throw new Error(`No workflow found for ${eventType}`);
+    throw new Error(
+      `No workflow found for ${eventType} version ${version}`
+    );
   }
 
   return workflow.sequence.map(group => ({
