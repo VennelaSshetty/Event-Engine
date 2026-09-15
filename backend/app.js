@@ -7,6 +7,7 @@ import dlqRoutes from "./src/api/routes/dlqRoutes.js";
 import dashboardRoutes from "./src/api/routes/dashboardRoutes.js";
 import workflowRoutes from "./src/api/routes/workflowRoutes.js";
 import metricsRoutes from "./src/api/routes/metricsRoutes.js";
+import healthRoutes from "./src/api/routes/healthRoutes.js";
 
 import correlationMiddleware from "./src/middlewares/correlationMiddleware.js";
 import errorMiddleware from "./src/middlewares/errorMiddleware.js";
@@ -18,6 +19,7 @@ app.use(express.json());
 
 app.use(correlationMiddleware);
 
+app.use("/", healthRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/replay", replayRoutes);
 app.use("/api/dlq", dlqRoutes);
