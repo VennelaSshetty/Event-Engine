@@ -13,11 +13,16 @@ logger.info({
 
 const BATCH_SIZE = 100;
 
+let shutdownRequested = false;
+let processing = false;
+
 /**
  * Process pending outbox events
  */
 const processOutbox = async () => {
-    let eventIds = [];
+  processing = true;
+
+  let eventIds = [];
   try {
 // -----------------------------------
 // FETCH PENDING EVENTS
@@ -154,13 +159,15 @@ if (batchEvents.length > 0) {
   });
 }
 
-  } catch (err) {
-  logger.error({
-    service: "outbox-worker",
-    error: err.message,
-    message: "Outbox processing failed"
-  });
-}
+   } catch (err) {
+    logger.error({
+      service: "outbox-worker",
+      error: err.message,
+      message: "Outbox processing failed"
+    });
+  } finally {
+    processing = false;
+  }
 };
 
 /**
@@ -173,9 +180,13 @@ const startOutboxWorker = async () => {
     message: "Outbox Worker started"
   });
 
-  while (true) {
+while (!shutdownRequested) {
 
   await processOutbox();
+
+  if (shutdownRequested) {
+    break;
+  }
 
   await new Promise(resolve =>
     setTimeout(resolve, 5000)
@@ -184,5 +195,50 @@ const startOutboxWorker = async () => {
 };
 
 export default startOutboxWorker;
+
+const shutdown = async (signal) => {
+  logger.info({
+    service: "outbox-worker",
+    signal,
+    message: "Graceful shutdown initiated"
+  });
+
+  shutdownRequested = true;
+
+  try {
+    // Wait for the current outbox operation to finish.
+    while (processing) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    await mongoose.connection.close();
+
+    logger.info({
+      service: "outbox-worker",
+      message: "MongoDB connection closed"
+    });
+
+    logger.info({
+      service: "outbox-worker",
+      message: "Graceful shutdown completed"
+    });
+
+    process.exit(0);
+
+  } catch (err) {
+    logger.error({
+      service: "outbox-worker",
+      error: err.message,
+      message: "Graceful shutdown failed"
+    });
+
+    process.exit(1);
+  }
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+
 
 startOutboxWorker();

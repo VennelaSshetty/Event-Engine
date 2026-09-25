@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import AppError from "../utils/AppError.js";
 import logger from "../utils/logger.js";
 import config from "../config/env.js";
+import CircuitBreaker from "../utils/circuitBreaker.js";
 
 const transporter = nodemailer.createTransport({
   host: config.mailHost,
@@ -11,6 +12,8 @@ const transporter = nodemailer.createTransport({
     pass: config.mailPass
   }
 });
+
+const circuitBreaker = new CircuitBreaker();
 
 const sendEmail = async (to, subject, context = {}) => {
   if (!to || !subject) {
@@ -37,15 +40,17 @@ const sendEmail = async (to, subject, context = {}) => {
 }
 
   try {
-    const info = await transporter.sendMail({
-  from: config.mailFrom,
-  to,
-  subject,
-  text: `Event Engine notification: ${subject}`,
-  headers: {
-    "X-Correlation-ID": context.correlationId
-  }
-});
+const info = await circuitBreaker.execute(() =>
+  transporter.sendMail({
+    from: config.mailFrom,
+    to,
+    subject,
+    text: `Event Engine notification: ${subject}`,
+    headers: {
+      "X-Correlation-ID": context.correlationId
+    }
+  })
+);
 
     logger.info({
       correlationId: context.correlationId,
@@ -75,5 +80,7 @@ const sendEmail = async (to, subject, context = {}) => {
     );
   }
 };
+
+export { circuitBreaker, transporter };
 
 export default sendEmail;

@@ -24,13 +24,15 @@ describe("Workflow Resume", () => {
 
     });
 
-    await WorkflowExecution.create({
+ await WorkflowExecution.create({
 
-      eventId: event._id,
+  eventId: event._id,
 
-      workflowName: "USER_SIGNUP",
+  workflowName: "USER_SIGNUP",
 
-      status: "failed",
+  workflowVersion: 1,
+
+  status: "failed",
 
       completedActions: [
         "sendWelcomeEmail",

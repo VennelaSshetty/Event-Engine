@@ -27,6 +27,12 @@ const config = {
   mailPass: process.env.MAIL_PASS,
   mailFrom: process.env.MAIL_FROM,
   mailEnabled: process.env.MAIL_ENABLED === "true",
+
+    circuitBreakerFailureThreshold:
+    Number(process.env.CIRCUIT_BREAKER_FAILURE_THRESHOLD) || 3,
+
+  circuitBreakerCooldown:
+    Number(process.env.CIRCUIT_BREAKER_COOLDOWN) || 10000,
 };
 
 export default config;
