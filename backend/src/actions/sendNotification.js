@@ -4,7 +4,13 @@ import AppError from "../utils/AppError.js";
 export default async function sendNotification({
   email }, context = {}) {
 
-  await new Promise(resolve => setTimeout(resolve, 10000));
+ // await new Promise(resolve => setTimeout(resolve, 10000));
+
+  // throw new AppError(
+  //     "intended error",
+  //     400,
+  //     false
+  //   );
   
   if (!email) {
     throw new AppError(

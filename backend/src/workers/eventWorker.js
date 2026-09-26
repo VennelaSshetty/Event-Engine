@@ -17,6 +17,16 @@ from "../services/workflowExecutionService.js";
 import validateWorkflows from "../validators/validateWorkflows.js";
 import eventQueue from "../queues/queue.js";
 
+import {
+  beginWorkerHeartbeat,
+  addActiveEvent,
+  removeActiveEvent,
+  addActiveAction,
+  removeActiveAction,
+  setActiveJobs,
+  removeWorker
+} from "../services/workerRegistry.js";
+
 // --------------------
 // DB CONNECTION
 // --------------------
@@ -49,6 +59,11 @@ try {
 // --------------------
 // WORKER
 // --------------------
+
+await beginWorkerHeartbeat();
+
+let activeJobCount = 0;
+
 const worker = new Worker(
   "event-queue",
 async (job) => {
@@ -113,6 +128,12 @@ const results=await Promise.allSettled(
 
         return;
       }
+
+      await addActiveEvent({
+  eventId,
+  type,
+  correlationId
+});
 
       // --------------------
       // MARK PROCESSING
@@ -179,15 +200,32 @@ for (const stage of plan) {
         return;
       }
 
-      await executeStep({
-        action,
-        payload,
-        context: {
-          correlationId,
-          eventType: type,
-          eventId
-        }
-      });
+await addActiveAction({
+  eventId,
+  action,
+  correlationId
+});
+
+try {
+
+  await executeStep({
+    action,
+    payload,
+    context: {
+      correlationId,
+      eventType: type,
+      eventId
+    }
+  });
+
+} finally {
+
+  await removeActiveAction({
+    eventId,
+    action
+  });
+
+}
 
       await WorkflowExecutionService
         .markActionCompleted({
@@ -245,15 +283,32 @@ for (const stage of plan) {
         continue;
       }
 
-      await executeStep({
-        action,
-        payload,
-        context: {
-          correlationId,
-          eventType: type,
-          eventId
-        }
-      });
+     await addActiveAction({
+  eventId,
+  action,
+  correlationId
+});
+
+try {
+
+  await executeStep({
+    action,
+    payload,
+    context: {
+      correlationId,
+      eventType: type,
+      eventId
+    }
+  });
+
+} finally {
+
+  await removeActiveAction({
+    eventId,
+    action
+  });
+
+}
 
       await WorkflowExecutionService
         .markActionCompleted({
@@ -398,6 +453,10 @@ return;
 }
       // NON-RETRYABLE
 throw err;
+    }finally {
+
+      await removeActiveEvent(eventId);
+
     }
 
   })
@@ -456,13 +515,36 @@ await eventQueue.add(
 // --------------------
 // EVENTS
 // --------------------
+worker.on("active", async () => {
+  activeJobCount += 1;
+
+  await setActiveJobs(activeJobCount);
+});
+
 worker.on("completed", async (job) => {
+
+   activeJobCount = Math.max(0, activeJobCount - 1);
+
+  await setActiveJobs(activeJobCount);
 
   logger.info({
     service: "worker",
     jobId: job.id,
     batchSize: job.data.events.length,
     status: "BATCH_FINISHED"
+  });
+});
+
+worker.on("failed", async (job, err) => {
+  activeJobCount = Math.max(0, activeJobCount - 1);
+
+  await setActiveJobs(activeJobCount);
+
+  logger.warn({
+    service: "worker",
+    jobId: job?.id,
+    error: err?.message,
+    message: "BullMQ job failed"
   });
 });
 
@@ -488,6 +570,13 @@ const shutdown = async (signal) => {
       service: "event-worker",
       message: "Event worker closed"
     });
+
+    await removeWorker();
+
+logger.info({
+  service: "event-worker",
+  message: "Worker registry entry removed"
+});
 
     // Close MongoDB connection
     await mongoose.connection.close();
