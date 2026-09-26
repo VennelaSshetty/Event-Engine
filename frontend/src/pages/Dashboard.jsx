@@ -274,22 +274,26 @@ const handleReplay = async (eventId) => {
             </div>
 
 
-            <div className="space-y-3">
+            <div
+  className={`grid gap-3 ${
+    workers.instances.length <= 4
+      ? "grid-cols-1"
+      : "grid-cols-1 sm:grid-cols-2"
+  }`}
+>
+  {workers.instances.map((worker) => (
+    <WorkerRow
+      key={worker.workerId}
+      worker={worker}
+    />
+  ))}
 
-              {workers.instances.map((worker) => (
-                <WorkerRow
-                  key={worker.workerId}
-                  worker={worker}
-                />
-              ))}
-
-              {workers.instances.length === 0 && (
-                <div className="text-sm text-slate-500 py-6 text-center">
-                  No active workers detected
-                </div>
-              )}
-
-            </div>
+  {workers.instances.length === 0 && (
+    <div className="text-sm text-slate-500 py-6 text-center sm:col-span-2">
+      No active workers detected
+    </div>
+  )}
+</div>
 
           </section>
 
