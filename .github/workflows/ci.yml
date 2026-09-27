@@ -40,13 +40,14 @@ jobs:
         working-directory: backend
         run: npm test
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm install
+      - name: Create CI environment file
+        working-directory: backend
+        run: |
+          cat > .env <<'EOF'
+          MONGO_URI=mongodb://localhost:27017/event-engine
+          PORT=5000
+          REDIS_URL=redis://redis:6379
+          EOF
 
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-
-      - name: Build Docker image
-        run: docker build -t event-engine-backend ./backend
+      - name: Build Docker Compose services
+        run: docker compose build
