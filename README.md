@@ -1,6 +1,6 @@
 # ⚡ Event Engine
 
-> A Production-Grade Event Processing & Workflow Orchestration Platform built using Node.js, Express.js, Redis, BullMQ, MongoDB Atlas, and React.
+> A distributed event-processing and workflow-orchestration platform built with Node.js, Express, BullMQ, Redis, MongoDB and React.
 
 ![Dashboard Overview](./screenshots/dashboard-overview.png)
 
@@ -9,788 +9,833 @@
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green)
 ![Redis](https://img.shields.io/badge/Redis-Upstash-red)
 ![BullMQ](https://img.shields.io/badge/BullMQ-Queue-orange)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Render](https://img.shields.io/badge/Render-Deployed-success)
 ![Vercel](https://img.shields.io/badge/Vercel-Frontend-black)
 
 ---
 
-## 🌐 Live Links
+## 🌐 Live Demo
 
-- Frontend: https://event-engine-steel.vercel.app/
-- Backend API: https://event-engine-backend.onrender.com
-- Repository: https://github.com/VennelaSshetty/Event-Engine
+| | Link |
+|---|---|
+| Dashboard (Vercel) | https://event-engine-steel.vercel.app/ |
+| Backend API (Render) | https://event-engine-backend.onrender.com |
+| Repository | https://github.com/VennelaSshetty/Event-Engine |
 
----
-
-# 🚀 Highlights
-
-✅ Event-Driven Architecture
-
-✅ Workflow Orchestration Engine
-
-✅ Redis + BullMQ Queue Processing
-
-✅ API Key Authentication
-
-✅ Rate Limiting
-
-✅ Idempotency Protection
-
-✅ Concurrent Worker Processing
-
-✅ Dead Letter Queue (DLQ)
-
-✅ Event Replay System
-
-✅ Real-Time Monitoring Dashboard
-
-✅ Event Analytics & Insights
-
-✅ Cloud Deployment using Vercel, Render, MongoDB Atlas, and Upstash Redis
+> ⏳ The backend runs on a free Render instance. If it has been idle, the first request can take 30–60 seconds while it wakes up.
 
 ---
 
-# 📖 Overview
+## 📑 Table of Contents
 
-Modern applications continuously generate events such as user registrations, payments, notifications, and order creations.
-
-Processing these events synchronously can lead to:
-
-- Slow API response times
-- Reduced scalability
-- Increased system coupling
-- Poor fault tolerance
-
-Event Engine solves these challenges through an event-driven architecture that separates event ingestion from event processing.
-
-Applications submit events to the platform, which validates, stores, queues, processes, tracks, and visualizes them through a centralized dashboard.
-
-The project demonstrates real-world backend engineering concepts commonly used in modern distributed systems.
+1. [What is Event Engine?](#-what-is-event-engine)
+2. [Key Features](#-key-features)
+3. [Architecture](#-architecture)
+4. [Event Lifecycle](#-event-lifecycle)
+5. [Workflow Engine](#-workflow-engine)
+6. [Reliability Design](#-reliability-design)
+7. [Dashboard Tour](#-dashboard-tour)
+8. [Quick Start with Docker (recommended)](#-quick-start-with-docker-recommended)
+9. [Scaling Workers](#-scaling-workers)
+10. [Run Manually (without Docker)](#-run-manually-without-docker)
+11. [Environment Variables](#-environment-variables)
+12. [Email Notifications (Mailtrap)](#-email-notifications-mailtrap)
+13. [API Reference](#-api-reference)
+14. [Testing](#-testing)
+15. [Load Testing and Benchmarks](#-load-testing-and-benchmarks)
+16. [Troubleshooting](#-troubleshooting)
+17. [Tech Stack](#-tech-stack)
+18. [Project Structure](#-project-structure)
+19. [Future Improvements](#-future-improvements)
 
 ---
 
-# 🎯 Why Event Engine?
+## 📖 What is Event Engine?
 
-Most applications start by directly executing business logic inside APIs.
-
-Example:
+Modern applications constantly generate events: a user signs up, a payment succeeds, an order is created. Handling all of that inside the API request makes responses slow and fragile:
 
 ```js
+// ❌ The naive approach
 app.post("/signup", async (req, res) => {
-  await sendWelcomeEmail();
-  await createAnalyticsRecord();
-  await sendNotification();
+  await sendWelcomeEmail();       // slow
+  await createAnalyticsRecord();  // can fail
+  await sendNotification();       // blocks the user
+  res.send("ok");
 });
 ```
 
-While simple, this approach becomes difficult to scale as systems grow.
+**Event Engine separates *receiving* an event from *processing* it.**
 
-Event Engine introduces:
-
-- Asynchronous Processing
-- Queue-Based Architecture
-- Workflow Orchestration
-- Failure Recovery
-- Event Replay
-- Distributed Processing
-
-allowing applications to remain responsive and scalable.
+1. An app sends an event to the API.
+2. The API authenticates it, rejects duplicates, stores it and puts it on a queue, then responds immediately.
+3. Independent **workers** pick the event up and run the matching **workflow** (email, notification, analytics, ...).
+4. Every step is tracked, retried on failure, and visible in a live dashboard.
 
 ---
 
-# 🏗 System Architecture
+## 🚀 Key Features
+
+**Ingestion & security**
+- API key authentication (`x-api-key`)
+- Per-key rate limiting
+- Idempotency keys to prevent duplicate events
+
+**Processing**
+- Asynchronous processing with Redis + BullMQ
+- Config-driven, **versioned** workflow engine (no hard-coded `if/else` per event type)
+- Sequential and parallel action stages
+- Horizontally scalable workers with controlled concurrency
+- Redis caching of workflow configuration
+
+**Reliability**
+- Automatic retries with exponential backoff (`RETRYING` status)
+- Retryable vs non-retryable error classification
+- Dead Letter Queue (DLQ) so no failure is lost silently
+- Event replay from the dashboard
+- Atomic workflow-execution creation (no duplicate execution on concurrent workers)
+- Resume-on-retry: actions that already completed are not run again
+- Circuit breaker around the email provider
+
+**Observability**
+- Live dashboard: totals, p95 latency, failure rate
+- Worker pool and BullMQ queue-depth view
+- Workflow action tracker
+- System health indicators (API, Worker, Redis, MongoDB, Queue)
+- Metrics service and health endpoints
+
+**Quality & operations**
+- Automated Jest test suite for the riskiest logic
+- GitHub Actions CI pipeline
+- One-command Docker Compose setup
+- Scale workers with a single flag
+- Deployed on Vercel + Render + MongoDB Atlas + Upstash Redis
+
+---
+
+## 🏗 Architecture
 
 ```text
-                     ┌──────────────────────┐
-                     │     Client Apps      │
-                     │  FoodApp / Services  │
-                     └──────────┬───────────┘
-                                │
-                                ▼
+ ┌─────────────────┐
+ │   Client Apps   │   POST /api/events
+ └────────┬────────┘
+          ▼
+ ┌─────────────────────────────────────────┐
+ │               API Service               │
+ │  Auth → Rate Limit → Idempotency Check  │
+ └────────┬────────────────────────────────┘
+          │ save event               ┌──────────────┐
+          ├─────────────────────────▶│   MongoDB    │ (events, executions, DLQ)
+          │ enqueue job              └──────────────┘
+          ▼
+ ┌─────────────────┐
+ │  Redis (BullMQ) │   queue + cached workflow configs
+ └────────┬────────┘
+          ▼
+ ┌─────────────────────────────────────────┐
+ │   Worker Pool  (event-worker × N)       │
+ │   Planner → Executor → Action Registry  │
+ └────────┬────────────────────────────────┘
+          ▼
+   Actions: Email · Notification · Analytics · Order Status
+          │
+          ▼
+ Status updates → MongoDB → React Dashboard
+          │
+   (on final failure) → Dead Letter Queue
+```
 
-                    ┌──────────────────────┐
-                    │     API Service      │
-                    │  Node.js + Express   │
-                    └──────────┬───────────┘
-                               │
+**Three kinds of worker processes:**
 
-         ┌─────────────────────┼─────────────────────┐
-         │                     │                     │
+| Worker | Responsibility |
+|---|---|
+| `event-worker` | Runs workflows for queued events. This is the one you scale. |
+| `outbox-worker` | Reliably hands saved events over to the queue (outbox pattern). |
+| `dlq-worker` | Handles jobs that exhausted all retries. |
 
-         ▼                     ▼                     ▼
+---
 
- Authentication         Rate Limiting        Idempotency
+## 🔄 Event Lifecycle
 
-         │                     │                     │
-         └─────────────────────┼─────────────────────┘
-                               │
-                               ▼
-
-                    MongoDB Event Store
-
-                               │
-                               ▼
-
-                    Redis Queue (BullMQ)
-
-                               │
-                               ▼
-
-                    ┌───────────────────┐
-                    │  Worker Service   │
-                    │ Concurrent Jobs   │
-                    └─────────┬─────────┘
-                              │
-                              ▼
-
-                     Workflow Engine
-
-                              │
-
-       ┌──────────────────────┼──────────────────────┐
-       │                      │                      │
-
-       ▼                      ▼                      ▼
-
- Send Email          Send Notification      Track Analytics
-
-       │                      │                      │
-       └──────────────────────┼──────────────────────┘
-                              │
-                              ▼
-
-                     Status Tracking
-
-                              │
-                              ▼
-
-                  Dashboard & Monitoring
+```text
+Client request
+   │
+   ▼
+API key check ──✗──▶ 401 Unauthorized
+   │
+   ▼
+Rate limit ─────✗──▶ 429 Too Many Requests
+   │
+   ▼
+Idempotency check ──duplicate──▶ returns the original event, nothing reprocessed
+   │
+   ▼
+Save event (status: pending) → enqueue job
+   │
+   ▼
+Worker picks job (status: processing)
+   │
+   ▼
+Workflow runs  ──error──▶ status: retrying → backoff → retry
+   │                                   │
+   ▼                                   ▼ (retries exhausted / non-retryable)
+status: completed                 status: failed → Dead Letter Queue → replay
 ```
 
 ---
 
-# 🔄 Event Lifecycle
+## ⚙ Workflow Engine
 
-```text
-Client Request
-      │
-      ▼
-API Authentication
-      │
-      ▼
-Rate Limiting
-      │
-      ▼
-Idempotency Validation
-      │
-      ▼
-Store Event in MongoDB
-      │
-      ▼
-Push Job to Redis Queue
-      │
-      ▼
-Worker Picks Job
-      │
-      ▼
-Workflow Execution
-      │
-      ▼
-Update Event Status
-      │
-      ▼
-Dashboard & Analytics
-```
+Workers contain **no business logic**. They only execute workflows that are defined in configuration (`backend/src/config/workflows.js`).
 
----
-
-# ⚙ Workflow Engine
-
-One of the core components of Event Engine is the Workflow Engine.
-
-Instead of hardcoding business logic:
+A workflow is a list of **stages**, called a `sequence`. Stages run **one after another**. Actions that share a stage run **in parallel**.
 
 ```js
-if (eventType === "USER_SIGNUP") {
-  sendWelcomeEmail();
-}
+const workflows = {
+  ORDER_CREATED: {
+    1: {                                   // version 1
+      sequence: [
+        ["sendOrderEmail", "sendNotification"],   // stage 1: both run in parallel
+        ["trackAnalytics"]                        // stage 2: runs after stage 1
+      ]
+    }
+  },
+  // ...
+};
+
+export const CURRENT_VERSION = 1;
 ```
 
-The platform uses configurable workflows:
+### Supported workflows
 
-```json
-{
-  "USER_SIGNUP": [
-    "sendWelcomeEmail",
-    "sendNotification",
-    "trackAnalytics"
-  ],
+| Event type | Version | Execution plan |
+|---|---|---|
+| `USER_SIGNUP` | 1 | `sendWelcomeEmail` → `sendNotification` → `trackAnalytics` |
+| `USER_SIGNUP` | 2 | `sendWelcomeEmail` → `trackAnalytics` |
+| `ORDER_CREATED` | 1 | (`sendOrderEmail` ‖ `sendNotification`) → `trackAnalytics` |
+| `PAYMENT_SUCCESS` | 1 | `updateOrderStatus` → (`sendPaymentEmail` ‖ `sendNotification`) → `trackAnalytics` |
 
-  "PAYMENT_SUCCESS": [
-    "sendPaymentEmail",
-    "sendNotification",
-    "trackAnalytics"
-  ],
-
-  "ORDER_CREATED": [
-    "sendNotification",
-    "trackAnalytics"
-  ]
-}
-```
-
-Execution Flow:
+`→` means "then" (sequential). `‖` means "at the same time" (parallel).
 
 ```text
-Event
- ↓
-Workflow Engine
- ↓
-Load Workflow
- ↓
-Resolve Actions
- ↓
-Execute Actions
- ↓
-Update Status
+PAYMENT_SUCCESS (v1)
+
+Stage 1:              updateOrderStatus
+                              ↓
+Stage 2 (parallel):   sendPaymentEmail  ║  sendNotification
+                              ↓
+Stage 3:              trackAnalytics
 ```
 
-Benefits:
+This gives safe ordering (for example, analytics only after the order is updated and the email/notification stage is done) while still getting parallel speed where it is safe.
 
-- Extensible Design
-- Cleaner Business Logic
-- Easier Maintenance
-- Workflow Reusability
-- Better Scalability
+### Workflow versioning
 
----
+Workflows are versioned per event type, so you can change a workflow without breaking events that are already in flight.
 
-# 🔒 Reliability Features
+- When an event's workflow execution is first created, it is **stamped with the workflow version** at that moment.
+- Retries and replays always use the **stored version**, never "whatever is current now".
+- Changing `CURRENT_VERSION` only affects **new** executions.
 
-## API Key Authentication
+For example, if an execution started on `USER_SIGNUP` v1 and you later switch the system to v2, that execution still finishes using v1's actions. This behavior is covered by an automated test (`workflowVersioning.test.js`).
 
-Only authorized applications can publish events.
+### Adding a new workflow
 
-Every request requires:
-
-```http
-x-api-key
-```
-
-The platform validates:
-
-- Key existence
-- Active status
-- Application authorization
+Add the action module under `src/actions/`, register it, and add a definition to `workflows.js`. Worker code does not change. Workflow definitions are validated (`validators/validateWorkflows.js`) so a bad config is caught early.
 
 ---
 
-## Rate Limiting
+## 🛡 Reliability Design
 
-Protects the system against abuse and excessive traffic.
-
-Benefits:
-
-- Prevents spam requests
-- Preserves worker capacity
-- Improves platform stability
-
----
-
-## Idempotency Protection
-
-Every request must include a unique idempotency key.
-
-Example:
-
-```http
-idempotency-key: signup_123
-```
-
-If the same event is submitted multiple times using the same key:
-
-```text
-First Request  → Accepted
-Second Request → Rejected as Duplicate
-```
-
-This prevents:
-
-- Duplicate emails
-- Duplicate payments
-- Duplicate workflow executions
+| Problem | How Event Engine handles it |
+|---|---|
+| Same event sent twice | Unique `idempotencyKey`; duplicates return the original event |
+| Two workers start the same workflow | Atomic upsert on a unique `eventId` index |
+| Temporary failure (network, provider) | Automatic retries with exponential backoff |
+| Failure that can never succeed (e.g. unknown action) | `NonRetryableError` goes straight to the DLQ |
+| Worker crashes mid-job | BullMQ stalled-job detection re-queues the job |
+| Retry after partial success | Completed actions are skipped, only the remaining ones run |
+| Parallel action fails | `Promise.allSettled` aggregates results, one final decision is made |
+| Email provider keeps failing | Circuit breaker opens after repeated failures, then recovers after a cooldown |
+| Workflow changed while events are in flight | Each execution is pinned to the version it started with |
+| Needs reprocessing after a bug fix | Replay from the DLQ / dashboard |
+| Need to trace one request | `correlationId` carried through API → queue → worker → logs |
 
 ---
 
-## Retry Mechanism
+## 📊 Dashboard Tour
 
-Failed jobs are automatically retried before being marked as failed.
+The React dashboard shows what is flowing, what is healthy and what is failing.
 
-Benefits:
-
-- Temporary failure recovery
-- Increased reliability
-- Reduced manual intervention
-
----
-
-## Dead Letter Queue (DLQ)
-
-Jobs that continue failing after retry attempts are moved to the Dead Letter Queue.
-
-```text
-Event
- ↓
-Retry
- ↓
-Retry
- ↓
-Retry
- ↓
-DLQ
-```
-
-Benefits:
-
-- No silent failures
-- Easier debugging
-- Recovery support
-
----
-
-## Event Replay
-
-Failed events can be replayed and reprocessed.
-
-```text
-Failed Event
-     ↓
-Replay
-     ↓
-Queue
-     ↓
-Worker
-     ↓
-Workflow Execution
-```
-
-Use Cases:
-
-- Bug Fix Validation
-- Recovery Operations
-- Historical Reprocessing
-
----
-
-# ⚡ Scalability Features
-
-## Redis Queue
-
-BullMQ and Redis are used to decouple ingestion from processing.
-
-Benefits:
-
-- Faster APIs
-- Reliable Delivery
-- Better Throughput
-
----
-
-## Concurrent Workers
-
-Multiple jobs can be processed simultaneously.
-
-```text
-Worker 1
-Worker 2
-Worker 3
-Worker 4
-```
-
-Benefits:
-
-- Increased throughput
-- Improved performance
-- Horizontal scaling readiness
-
----
-
-## Distributed Processing
-
-API services and workers operate independently.
-
-This architecture allows processing workloads to scale without affecting API responsiveness.
-
----
-
-# 📊 Dashboard Features
-
-The React dashboard provides complete visibility into platform activity.
-
----
-
-## Dashboard Overview
-
+### 1. Overview
 ![Dashboard Overview](./screenshots/dashboard-overview.png)
 
-Features:
+Top-line numbers: **Total Events, Completed, Processing, Retrying, Failed, DLQ, P95 Latency, Failure Rate**, plus overall system status and active worker count.
 
-- Total Events
-- Completed Events
-- Failed Events
-- Processing Events
-- Average Processing Time
+### 2. Live Pipeline
+![Live Processing](./screenshots/live-processing.png)
 
----
+Shows events moving through each stage in real time: **API Ingest → Queue → Worker Pool → Actions → Done / DLQ**.
 
-## Workflow Execution Tracker
+### 3. Worker Pool and Queue Depth
+![Worker Pool and Queue](./screenshots/worker-pool-and-queue.png)
 
-![Workflow Tracker](./screenshots/workflow-tracker.png)
+- **Worker Pool:** every running worker instance, whether it is busy or idle, and how many jobs it handled.
+- **Queue Depth:** BullMQ *waiting*, *active* and *delayed* jobs, plus total in flight.
 
-Tracks execution of workflow actions in real time.
+### 4. Recent Events
+![Recent Events](./screenshots/recent-events.png)
 
-Example:
+The latest events with type, status, replay count and end-to-end latency.
 
-```text
-USER_SIGNUP
-
-✓ sendWelcomeEmail
-✓ sendNotification
-✓ trackAnalytics
-```
-
----
-
-## Analytics Dashboard
-
-![Analytics](./screenshots/analytics.png)
-
-Provides:
-
-- Event Distribution
-- Event Activity Timeline
-- Processing Insights
-
----
-
-## Dead Letter Queue
-
+### 5. Dead Letter Queue
 ![Dead Letter Queue](./screenshots/dead-letter-queue.png)
 
-Displays:
+Events that failed all retries, with the failure reason and a **Replay** action.
 
-- Failed Events
-- Failure Reasons
-- Replay Actions
+### 6. System Health Bar
+The bar at the bottom of the dashboard shows the status of **API, Worker, Redis, MongoDB and Queue**, and a summary of overall worker health.
+
+**All systems active:**
+
+![All Events Active](./screenshots/all-events-active.png)
+
+**No worker running** (the dashboard clearly warns you that events will not be processed):
+
+![Worker Down](./screenshots/worker-down.png)
+
+### 7. Docker Compose
+![docker compose ps](./screenshots/docker-compose-ps.png)
+
+All services (Mongo, Redis, API, workers, frontend) running from a single command.
 
 ---
 
-# 🔑 API Documentation
+## 🐳 Quick Start with Docker (recommended)
 
-## Demo API Key
+The whole system, including MongoDB, Redis, API, all workers and the dashboard, starts with **one command**. You do not need to install Node.js, MongoDB or Redis.
 
-```text
-sk_demo_eventengine_7c4f92b18e5d
+### Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose installed
+- Git
+
+### Steps
+
+```bash
+# 1. Clone
+git clone https://github.com/VennelaSshetty/Event-Engine.git
+cd Event-Engine
+
+# 2. Start everything
+docker compose up --build
 ```
 
----
+Once the containers are up, open:
 
-## Supported Event Types
+| What | URL |
+|---|---|
+| **Dashboard** | http://localhost (or http://127.0.0.1) |
+| **API base URL** | http://127.0.0.1:5000 |
+| **Send events to** | http://127.0.0.1:5000/api/events |
 
-### USER_SIGNUP
+Check that everything is running:
 
-```json
-{
-  "type": "USER_SIGNUP",
-  "idempotencyKey": "user_84",
-  "payload": {
-    "userId": "user_59",
-    "email": "pra@example.com"
-  }
-}
+```bash
+docker compose ps
 ```
 
----
+Stop everything:
 
-### PAYMENT_SUCCESS
-
-```json
-{
-  "type": "PAYMENT_SUCCESS",
-  "idempotencyKey": "pay_262",
-  "payload": {
-    "paymentId": "pay_59",
-    "email": "pra@example.com",
-    "orderId": "order_19"
-  }
-}
+```bash
+docker compose down
 ```
 
+> 💡 No Mailtrap account or paid service is needed to try the project. Email sending is disabled by default (see [Email Notifications](#-email-notifications-mailtrap)).
+
 ---
 
-### ORDER_CREATED
+## 📈 Scaling Workers
 
+Event Engine scales horizontally: more worker containers means more events processed in parallel. BullMQ locks each job so two workers never process the same job.
+
+Run **8 event workers**:
+
+```bash
+docker compose up --build --scale event-worker=8
+```
+
+Run **3 event workers**:
+
+```bash
+docker compose up --build --scale event-worker=3
+```
+
+Scale a running system without rebuilding:
+
+```bash
+docker compose up -d --scale event-worker=8
+```
+
+Open the dashboard, and the **Worker Pool** panel will show all 8 instances (`0 busy · 8 idle` when no load).
+
+There are two levels of parallelism:
+
+| Setting | Meaning |
+|---|---|
+| `--scale event-worker=N` | Number of worker **processes/containers** |
+| `WORKER_CONCURRENCY` | Number of jobs **each** worker handles at the same time |
+
+Total parallel jobs ≈ `N × WORKER_CONCURRENCY`.
+
+---
+
+## 🖥 Run Manually (without Docker)
+
+Use this if you want to run each part yourself for development.
+
+### Prerequisites
+- Node.js 18+
+- A MongoDB instance (local or [MongoDB Atlas](https://www.mongodb.com/atlas))
+- A Redis instance (local, or [Upstash](https://upstash.com/))
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/VennelaSshetty/Event-Engine.git
+cd Event-Engine
+
+cd backend && npm install
+cd ../frontend && npm install
+```
+
+### 2. Configure environment
+
+Create `backend/.env` and `frontend/.env` (see [Environment Variables](#-environment-variables)).
+
+If your database does not have an API key yet, create one:
+
+```bash
+cd backend
+node scripts/createApiKey.js
+```
+
+### 3. Start each component
+
+You need **5 terminals**. All backend commands run from the `backend` folder.
+
+| # | Component | Command |
+|---|---|---|
+| 1 | **API server** | `npm run dev` |
+| 2 | **Event worker** | `node src/workers/eventWorker.js` |
+| 3 | **Outbox worker** | `node src/workers/outboxWorker.js` |
+| 4 | **DLQ worker** | `node src/workers/dlqWorker.js` |
+| 5 | **Frontend** (from `frontend/`) | `npm run dev` |
+
+```bash
+# Terminal 1 - API
+cd backend
+npm run dev
+
+# Terminal 2 - Event worker
+cd backend
+node src/workers/eventWorker.js
+
+# Terminal 3 - Outbox worker
+cd backend
+node src/workers/outboxWorker.js
+
+# Terminal 4 - DLQ worker
+cd backend
+node src/workers/dlqWorker.js
+
+# Terminal 5 - Frontend
+cd frontend
+npm run dev
+```
+
+When running the frontend manually with Vite, the dashboard is at **http://localhost:5173**. The API runs at **http://127.0.0.1:5000**.
+
+To run more event workers manually, start `node src/workers/eventWorker.js` in additional terminals.
+
+> ⚠️ **If no worker is running**, the API will still accept events (status stays `pending`), but nothing will process them and the dashboard will show **Worker down**. Start the workers and the backlog is processed automatically.
+
+---
+
+## 🔧 Environment Variables
+
+### Backend: `backend/.env`
+
+```dotenv
+# Server
+PORT=5000
+
+# Database and queue
+MONGO_URI=your_mongodb_connection_string
+REDIS_URL=your_redis_connection_string
+QUEUE_NAME=event-queue
+
+# Reliability
+RETRY_ATTEMPTS=5
+RETRY_DELAY=5000
+WORKER_CONCURRENCY=5
+
+# Load testing scripts
+BENCHMARK_API_URL=http://localhost:5000/api/events
+BENCHMARK_API_KEY=sk_demo_eventengine_7c4f92b18e5d
+
+# Email (Mailtrap sandbox). Currently disabled, see "Email Notifications"
+MAIL_HOST=your_mailtrap_smtp_host
+MAIL_PORT=2525
+MAIL_USER=your_mailtrap_user
+MAIL_PASS=your_mailtrap_password
+MAIL_FROM=your_from_address
+MAIL_ENABLED=false
+
+# Circuit breaker (email provider)
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=3
+CIRCUIT_BREAKER_COOLDOWN=10000
+```
+
+| Variable | Description |
+|---|---|
+| `PORT` | API server port |
+| `MONGO_URI` | MongoDB connection string |
+| `REDIS_URL` | Redis connection string |
+| `QUEUE_NAME` | BullMQ queue name |
+| `RETRY_ATTEMPTS` | Retries before an event is marked failed and sent to the DLQ |
+| `RETRY_DELAY` | Base delay (ms) for exponential backoff |
+| `WORKER_CONCURRENCY` | Jobs processed in parallel by each worker |
+| `BENCHMARK_API_URL` | Endpoint the load-test script sends events to |
+| `BENCHMARK_API_KEY` | API key the load-test script uses |
+| `MAIL_HOST` / `MAIL_PORT` | Mailtrap SMTP host and port |
+| `MAIL_USER` / `MAIL_PASS` | Mailtrap SMTP credentials |
+| `MAIL_FROM` | Sender address on outgoing mail |
+| `MAIL_ENABLED` | `true` to send real emails, `false` to simulate them |
+| `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | Consecutive email failures before the breaker opens |
+| `CIRCUIT_BREAKER_COOLDOWN` | Time (ms) the breaker stays open before testing recovery |
+
+### Frontend: `frontend/.env`
+
+```dotenv
+VITE_API_BASE_URL=http://127.0.0.1:5000
+```
+
+| Variable | Description |
+|---|---|
+| `VITE_API_BASE_URL` | Base URL of the backend API the dashboard talks to |
+
+When using Docker Compose, MongoDB and Redis run as containers and the services are already wired together in `docker-compose.yml`.
+
+---
+
+## ✉ Email Notifications (Mailtrap)
+
+Event Engine sends emails through **Mailtrap** (SMTP sandbox) using Nodemailer.
+
+**Real email sending is currently disabled** (`MAIL_ENABLED=false`). Mailtrap's free plan allows only about 50 emails, which a load test uses up almost immediately. While disabled:
+
+- Email actions still run as part of the workflow.
+- The email is **simulated** (logged instead of sent), so workflows complete normally and the dashboard behaves exactly the same.
+- Nothing else in the system is affected.
+
+**To enable real emails**, create a free [Mailtrap](https://mailtrap.io/) account, copy your sandbox SMTP credentials, and set them in `backend/.env`:
+
+```dotenv
+MAIL_HOST=sandbox.smtp.mailtrap.io
+MAIL_PORT=2525
+MAIL_USER=your_mailtrap_user
+MAIL_PASS=your_mailtrap_password
+MAIL_FROM=noreply@eventengine.dev
+MAIL_ENABLED=true
+```
+
+Restart the workers, send an event, and the email will appear in your Mailtrap inbox.
+
+**Circuit breaker:** email calls are wrapped in a circuit breaker. After `CIRCUIT_BREAKER_FAILURE_THRESHOLD` consecutive failures it opens and stops calling the provider for `CIRCUIT_BREAKER_COOLDOWN` ms, then lets a trial request through to check whether the provider has recovered. This stops a failing email provider from slowing down or stalling the workers.
+
+---
+
+## 🔑 API Reference
+
+### Authentication
+
+Every request must include an API key header.
+
+```http
+x-api-key: sk_demo_eventengine_7c4f92b18e5d
+```
+
+> This is a public **demo** key for trying the project.
+
+### `POST /api/events`: submit an event
+
+| Environment | URL |
+|---|---|
+| Local (Docker or manual) | `http://127.0.0.1:5000/api/events` |
+| Live demo | `https://event-engine-backend.onrender.com/api/events` |
+
+**Headers**
+
+| Header | Required | Description |
+|---|---|---|
+| `Content-Type` | yes | `application/json` |
+| `x-api-key` | yes | Your API key |
+
+**Body**
+
+| Field | Description |
+|---|---|
+| `type` | `USER_SIGNUP`, `PAYMENT_SUCCESS` or `ORDER_CREATED` |
+| `idempotencyKey` | A **unique** string per logical event |
+| `payload` | Event data (see examples below) |
+
+### Sending events with Postman
+
+1. Create a new request: method **POST**, URL `http://127.0.0.1:5000/api/events`.
+2. Under **Headers**, add `x-api-key` with your API key, and `Content-Type: application/json`.
+3. Under **Body**, choose **raw** → **JSON** and paste one of the payloads below.
+4. Click **Send**, then watch the event move through the dashboard.
+
+**`ORDER_CREATED`**
 ```json
 {
   "type": "ORDER_CREATED",
-  "idempotencyKey": "order_992",
+  "idempotencyKey": "order_13126",
   "payload": {
-    "email": "pra@example.com",
+    "email": "vennu@example.com",
     "orderId": "order_19",
     "amount": 890
   }
 }
 ```
 
----
+**`PAYMENT_SUCCESS`**
+```json
+{
+  "type": "PAYMENT_SUCCESS",
+  "idempotencyKey": "pay_1278311",
+  "payload": {
+    "paymentId": "pay_1672",
+    "orderId": "order_9802",
+    "email": "vinith@example.com"
+  }
+}
+```
 
-## Sample Request
+**`USER_SIGNUP`**
+```json
+{
+  "type": "USER_SIGNUP",
+  "idempotencyKey": "user_91",
+  "payload": {
+    "userId": "user_9",
+    "email": "vidhi@example.com"
+  }
+}
+```
+
+### Sending events with cURL
 
 ```bash
-curl -X POST https://event-engine-backend.onrender.com/api/events \
--H "Content-Type: application/json" \
--H "x-api-key: sk_demo_eventengine_7c4f92b18e5d" \
--d '{
-  "type":"USER_SIGNUP",
-  "idempotencyKey":"user_84",
-  "payload":{
-    "userId":"user_59",
-    "email":"pra@example.com"
-  }
-}'
+curl -X POST http://127.0.0.1:5000/api/events \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: sk_demo_eventengine_7c4f92b18e5d" \
+  -d '{
+    "type": "USER_SIGNUP",
+    "idempotencyKey": "user_92",
+    "payload": {
+      "userId": "user_10",
+      "email": "demo@example.com"
+    }
+  }'
 ```
+
+To try the live deployment instead, replace the URL with `https://event-engine-backend.onrender.com/api/events`.
+
+### ⚠ Idempotency keys must be unique
+
+Reusing an `idempotencyKey` is treated as a duplicate: the original event is returned and **nothing is processed again**. If you are testing and nothing seems to happen, use a new key each time (for example `user_93`, `user_94`, ...).
+
+### Common responses
+
+| Status | Meaning |
+|---|---|
+| `2xx` | Event accepted (or duplicate of an existing event) |
+| `401` | Missing or invalid API key |
+| `429` | Rate limit exceeded |
+
+### Health endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /live` | Is the process alive? (restart me if not) |
+| `GET /ready` | Are MongoDB, Redis and the queue reachable? (route traffic to me?) |
+| `GET /health` | Combined health status |
 
 ---
 
-## Important Note
+## 🧪 Testing
 
-Every event must contain a unique:
+The project includes an automated **Jest** test suite that targets the parts of the system where a bug would hurt most: duplicate processing, concurrency, retries and failure handling.
 
-```text
-idempotencyKey
+```bash
+cd backend
+npm test
 ```
 
-Reusing an existing key will result in duplicate protection logic preventing reprocessing.
+| Test file | What it proves |
+|---|---|
+| `idempotency.test.js` | Sending the same `idempotencyKey` twice does not create or process a second event |
+| `workflow.test.js` | Workflows resolve to the correct stages and actions for each event type |
+| `workflowResume.test.js` | If a workflow fails midway, a retry skips actions that already completed and runs only the rest |
+| `workflowVersioning.test.js` | An execution stays pinned to the workflow version it started with, even after the current version changes |
+| `dlq.test.js` | A non-retryable error goes to the Dead Letter Queue without exhausting retries |
+| `circuitBreaker.test.js` | The email circuit breaker opens after repeated failures and recovers after the cooldown |
+
+Tests also run automatically on every push through **GitHub Actions** (`.github/workflows/ci.yml`), and the build fails if any test fails.
 
 ---
 
-# 🛠 Tech Stack
+## 📉 Load Testing and Benchmarks
+
+The `backend/scripts/` folder contains tools for stress-testing and debugging the pipeline:
+
+| Script | Purpose |
+|---|---|
+| `loadTest.js` | Fires many events at the API with unique idempotency keys to measure throughput and latency |
+| `bulkEventTest.js` | Sends events in bulk |
+| `checkQueue.js` / `queueDebug.js` | Inspect BullMQ queue state |
+| `cleanQueue.js` | Clear the queue between runs |
+| `createApiKey.js` | Create a new API key in the database |
+
+Run a load test (the target URL and key come from `BENCHMARK_API_URL` and `BENCHMARK_API_KEY` in `.env`):
+
+```bash
+cd backend
+node scripts/loadTest.js
+```
+
+Measured results (baseline, after DB optimization, after Redis caching) are recorded in [`BENCHMARKS.md`](./BENCHMARKS.md).
+
+> Remember to keep `MAIL_ENABLED=false` while load testing, otherwise the Mailtrap free quota is used up immediately.
+
+---
+
+## 🩺 Troubleshooting
+
+| Symptom | Likely cause and fix |
+|---|---|
+| Events stay `pending` forever | No worker is running. Start `eventWorker` (or use Docker). Dashboard shows **Worker down**. |
+| Dashboard shows 0 workers | Workers are not connected to the same Redis as the API. Check `REDIS_URL`. |
+| Dashboard loads but shows no data | `VITE_API_BASE_URL` is wrong or the API is not running. |
+| Sent an event but nothing new appears | The `idempotencyKey` was already used. Use a new one. |
+| `401 Unauthorized` | Missing or wrong `x-api-key` header, or the key does not exist in the database (`node scripts/createApiKey.js`). |
+| `429 Too Many Requests` | Rate limit hit. Wait a minute or slow down. |
+| Live demo is slow on first request | Free Render instance is waking up. Retry after about a minute. |
+| No emails arrive | Expected: `MAIL_ENABLED=false`. See [Email Notifications](#-email-notifications-mailtrap). |
+| Port already in use | Change the port in `.env` / `docker-compose.yml` or stop the other process. |
+| Docker changes not applied | Rebuild with `docker compose up --build`. |
+
+---
+
+## 🛠 Tech Stack
 
 | Layer | Technology |
-|---------|------------|
-| Frontend | React.js |
-| Build Tool | Vite |
-| Styling | Tailwind CSS |
-| Charts | Recharts |
-| Backend | Node.js |
-| API Framework | Express.js |
-| Database | MongoDB Atlas |
+|---|---|
+| Frontend | React, Vite, Tailwind CSS, Recharts |
+| Backend | Node.js, Express.js |
+| Database | MongoDB (Atlas in cloud) |
 | Queue | BullMQ |
-| Message Broker | Redis |
-| Redis Provider | Upstash |
-| Backend Hosting | Render |
-| Frontend Hosting | Vercel |
+| Broker / cache | Redis (Upstash in cloud) |
+| Email | Nodemailer + Mailtrap (sandbox) |
+| Testing | Jest |
+| CI | GitHub Actions |
+| Containers | Docker, Docker Compose |
+| Hosting | Vercel (frontend), Render (backend, workers) |
 
 ---
 
-# 📂 Project Structure
+## 📂 Project Structure
 
 ```text
-event-engine
-│
-├── backend
-│   │
-│   ├── src
-│   │   ├── api
-│   │   │   ├── controllers
-│   │   │   ├── routes
-│   │   │   └── middleware
-│   │   │
-│   │   ├── actions
-│   │   ├── workflows
-│   │   ├── workers
-│   │   ├── queues
-│   │   ├── models
-│   │   ├── services
-│   │   ├── config
-│   │   └── utils
-│
-├── frontend
-│   ├── src
-│   ├── pages
-│   ├── components
-│   ├── charts
-│   └── services
-│
-├── screenshots
-│
+Event-engine/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                    # CI pipeline (runs tests)
+├── backend/
+│   ├── scripts/                      # load test, queue tools, API key creation
+│   │   ├── bulkEventTest.js
+│   │   ├── checkQueue.js
+│   │   ├── cleanQueue.js
+│   │   ├── createApiKey.js
+│   │   ├── loadTest.js
+│   │   └── queueDebug.js
+│   ├── src/
+│   │   ├── actions/                  # workflow actions
+│   │   │   ├── sendNotification.js
+│   │   │   ├── sendOrderEmail.js
+│   │   │   ├── sendPaymentEmail.js
+│   │   │   ├── sendWelcomeEmail.js
+│   │   │   ├── trackAnalytics.js
+│   │   │   └── updateOrderStatus.js
+│   │   ├── api/
+│   │   │   ├── controllers/          # dashboard, dlq, event, health, metrics, replay, workflow
+│   │   │   └── routes/
+│   │   ├── config/                   # db, env, redis, event types/status, workflows (versioned)
+│   │   ├── middlewares/              # auth, rate limit, correlation id, error handling
+│   │   ├── models/                   # Event, WorkflowExecution, OutboxEvent, ApiKey, ...
+│   │   ├── queues/                   # main queue and DLQ
+│   │   ├── services/                 # email, notification, analytics, dlq, replay, metrics, ...
+│   │   ├── utils/                    # AppError, circuit breaker, logger, correlation id, ...
+│   │   ├── validators/               # event, payload and workflow validation
+│   │   ├── workers/
+│   │   │   ├── eventWorker.js
+│   │   │   ├── outboxWorker.js
+│   │   │   └── dlqWorker.js
+│   │   └── workflow-engine/
+│   │       ├── planner.js            # builds the execution plan from a workflow
+│   │       ├── executor.js           # runs actions stage by stage
+│   │       └── index.js
+│   ├── tests/                        # Jest test suite
+│   │   ├── circuitBreaker.test.js
+│   │   ├── dlq.test.js
+│   │   ├── idempotency.test.js
+│   │   ├── setup.js
+│   │   ├── workflow.test.js
+│   │   ├── workflowResume.test.js
+│   │   └── workflowVersioning.test.js
+│   ├── app.js
+│   ├── server.js
+│   ├── renderStart.js
+│   ├── Dockerfile
+│   ├── jest.config.js
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── pages/
+│   │   │   └── Dashboard.jsx
+│   │   ├── services/
+│   │   │   └── api.js
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── Dockerfile
+│   ├── tailwind.config.js
+│   ├── vite.config.js
+│   └── package.json
+├── screenshots/
+│   ├── dashboard-overview.png
+│   ├── worker-pool-and-queue.png
+│   ├── live-processing.png
+│   ├── recent-events.png
+│   ├── dead-letter-queue.png
+│   ├── all-events-active.png
+│   ├── worker-down.png
+│   └── docker-compose-ps.png
+├── BENCHMARKS.md
+├── docker-compose.yml
 └── README.md
 ```
 
----
+## 💡 Key Takeaways
 
-# ☁ Deployment Architecture
-
-```text
-Frontend (Vercel)
-        │
-        ▼
-
-Backend API (Render)
-        │
-        ▼
-
-MongoDB Atlas
-
-        │
-
-Redis Queue (Upstash)
-
-        │
-
-Worker Service (Render)
-```
-
----
-
-# 📈 Engineering Concepts Demonstrated
-
-- Event-Driven Architecture
-- Workflow Orchestration
-- Queue-Based Processing
-- Distributed Systems
-- Reliability Engineering
-- API Authentication
-- Idempotency Patterns
-- Dead Letter Queues
-- Event Replay
-- Concurrent Processing
-- Cloud Deployment
-- Scalable Backend Design
-
----
-
-# 🚀 Local Setup
-
-## Clone Repository
-
-```bash
-git clone https://github.com/VennelaSshetty/Event-Engine.git
-```
-
-```bash
-cd Event-Engine
-```
-
----
-
-## Install Dependencies
-
-### Backend
-
-```bash
-cd backend
-npm install
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-```
-
----
-
-## Environment Variables
-
-Create a `.env` file in the backend directory:
-
-```env
-PORT=5000
-
-MONGO_URI=your_mongodb_connection_string
-
-REDIS_URL=your_redis_connection_string
-
-API_KEY=your_api_key
-
-QUEUE_NAME=queue_name
-
-RETRY_ATTEMPTS=5
-RETRY_DELAY=5000
-
-WORKER_CONCURRENCY=5
-```
-
-### Variable Description
-
-| Variable | Description |
-|-----------|------------|
-| PORT | Backend server port |
-| MONGO_URI | MongoDB Atlas connection string |
-| REDIS_URL | Upstash Redis connection string |
-| API_KEY | Valid application API key |
-| QUEUE_NAME | BullMQ queue name |
-| RETRY_ATTEMPTS | Number of retry attempts before failure |
-| RETRY_DELAY | Delay between retry attempts (ms) |
-| WORKER_CONCURRENCY | Number of jobs processed concurrently |
-
-## Start Backend
-
-```bash
-cd backend
-npm run dev
-```
-
----
-
-## Start Worker Services
-
-Event Engine uses three independent worker processes.
-
-### Terminal 1 — Event Worker
-
-```bash
-cd backend
-node src/workers/eventWorker.js
-```
-
-### Terminal 2 — DLQ Worker
-
-```bash
-cd backend
-node src/workers/dlqWorker.js
-```
-
-### Terminal 3 — Outbox Worker
-
-```bash
-cd backend
-node src/workers/outboxWorker.js
-```
-
----
-
-## Start Frontend
-
-```bash
-cd frontend
-npm run dev
-```
-
-# 🔮 Future Improvements
-
-- Kafka Integration
-- OpenTelemetry Monitoring
-- Distributed Tracing
-- Advanced Workflow Builder
-- Multi-Tenant Dashboard
-- Enhanced Analytics
-- Workflow Versioning
-
----
-
-# 💡 Key Takeaways
-
-Event Engine evolved from a simple event ingestion API into a complete event-driven workflow orchestration platform. The project demonstrates real-world backend engineering concepts such as asynchronous processing, queue-based architectures, workflow execution, failure recovery, distributed processing, and cloud deployment while maintaining observability through a modern monitoring dashboard.
+Event Engine started as a simple event ingestion API and grew into a complete event-driven workflow platform. It demonstrates asynchronous processing, queue-based architecture, config-driven and versioned workflow orchestration, failure recovery, horizontal worker scaling, real-time observability and containerized deployment, built with attention to correctness (idempotency, atomic execution, retry semantics) and backed by automated tests rather than feature count.
