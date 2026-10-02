@@ -47,7 +47,6 @@
 16. [Troubleshooting](#-troubleshooting)
 17. [Tech Stack](#-tech-stack)
 18. [Project Structure](#-project-structure)
-19. [Future Improvements](#-future-improvements)
 
 ---
 
